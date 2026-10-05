@@ -69,7 +69,7 @@ data class AppSettings(
  * The API key is deliberately not in here; see
  * [de.localvoice.mistralhandsfree.auth.ApiKeyStore].
  */
-class SettingsStore(context: Context) {
+class SettingsStore(context: Context) : SettingsSource {
 
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
@@ -82,11 +82,11 @@ class SettingsStore(context: Context) {
     private val defaultSystemPrompt: String = context.getString(R.string.default_system_prompt)
 
     private val _settings = MutableStateFlow(read())
-    val settings: StateFlow<AppSettings> = _settings.asStateFlow()
+    override val settings: StateFlow<AppSettings> = _settings.asStateFlow()
 
-    val current: AppSettings get() = _settings.value
+    override val current: AppSettings get() = _settings.value
 
-    fun update(transform: (AppSettings) -> AppSettings) {
+    override fun update(transform: (AppSettings) -> AppSettings) {
         val next = transform(_settings.value)
         write(next)
         _settings.value = next

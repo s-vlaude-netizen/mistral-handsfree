@@ -1,15 +1,10 @@
 package de.localvoice.mistralhandsfree.session
 
-import android.Manifest
-import android.content.Context
-import android.content.pm.PackageManager
 import android.util.Log
-import androidx.core.content.ContextCompat
 import de.localvoice.mistralhandsfree.R
 import de.localvoice.mistralhandsfree.auth.ApiKeyStore
 import de.localvoice.mistralhandsfree.data.AppSettings
-import de.localvoice.mistralhandsfree.data.SettingsStore
-import de.localvoice.mistralhandsfree.data.SttEngine
+import de.localvoice.mistralhandsfree.data.SettingsSource
 import de.localvoice.mistralhandsfree.data.TtsEngine
 import de.localvoice.mistralhandsfree.domain.ChatMessage
 import de.localvoice.mistralhandsfree.domain.Role
@@ -17,20 +12,12 @@ import de.localvoice.mistralhandsfree.domain.SentenceChunker
 import de.localvoice.mistralhandsfree.domain.SpeechText
 import de.localvoice.mistralhandsfree.domain.VoiceCommands
 import de.localvoice.mistralhandsfree.llm.LlmEngine
-import de.localvoice.mistralhandsfree.llm.MistralLlmEngine
-import de.localvoice.mistralhandsfree.mistral.MistralAudio
 import de.localvoice.mistralhandsfree.mistral.MistralException
-import de.localvoice.mistralhandsfree.mistral.MistralRepository
-import de.localvoice.mistralhandsfree.mistral.pickVoice
 import de.localvoice.mistralhandsfree.mistral.userMessage
-import de.localvoice.mistralhandsfree.speech.AndroidSpeaker
-import de.localvoice.mistralhandsfree.speech.AndroidSpeechToText
-import de.localvoice.mistralhandsfree.speech.MistralSpeaker
-import de.localvoice.mistralhandsfree.speech.MistralSpeechToText
-import de.localvoice.mistralhandsfree.speech.Speaker
+import de.localvoice.mistralhandsfree.speech.SpeechEngines
 import de.localvoice.mistralhandsfree.speech.SpeechToText
+import de.localvoice.mistralhandsfree.speech.Speaker
 import de.localvoice.mistralhandsfree.speech.SttResult
-import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
@@ -75,12 +62,18 @@ enum class LiveState {
  * Nothing is sent by a button: the speech engine decides when a turn is over
  * (the pause after speech), the text goes to Mistral on its own, the answer is
  * spoken as it arrives, and the microphone opens again by itself.
+ *
+ * Everything that touches Android or the network comes in through the
+ * constructor as a small interface, so the loop can be run in tests with
+ * scripted engines and a fake model.
  */
 class LiveSessionController(
-    private val context: Context,
-    private val settingsStore: SettingsStore,
+    private val text: TextSource,
+    private val settingsStore: SettingsSource,
     private val keyStore: ApiKeyStore,
-    private val mistral: MistralRepository,
+    private val llm: LlmEngine,
+    private val engines: SpeechEngines,
+    private val hasMicrophonePermission: () -> Boolean,
     private val scope: CoroutineScope,
 ) {
 
@@ -106,10 +99,8 @@ class LiveSessionController(
     private val _level = MutableStateFlow(0f)
     val level: StateFlow<Float> = _level.asStateFlow()
 
-    private val _speechDiagnostics = MutableStateFlow(context.getString(R.string.tts_not_started))
+    private val _speechDiagnostics = MutableStateFlow(text.get(R.string.tts_not_started))
     val speechDiagnostics: StateFlow<String> = _speechDiagnostics.asStateFlow()
-
-    private val llm: LlmEngine = MistralLlmEngine(mistral.client) { settingsStore.current }
 
     private var stt: SpeechToText? = null
     private var sttSignature: String? = null
@@ -119,6 +110,7 @@ class LiveSessionController(
     private val idCounter = AtomicLong(0)
     private val pendingTypedInput = AtomicReference<String?>(null)
     private val turnMutex = Mutex()
+    private val speakerMutex = Mutex()
 
     private var loopJob: Job? = null
     private var turnJob: Job? = null
@@ -133,16 +125,19 @@ class LiveSessionController(
     fun start() {
         if (isRunning) return
         if (!hasMicrophonePermission()) {
-            _error.value = context.getString(R.string.error_no_mic_permission)
+            _error.value = text.get(R.string.error_no_mic_permission)
             return
         }
         if (keyStore.load() == null) {
-            requireSignIn(context.getString(R.string.err_no_key))
+            reportSignInNeeded(text.get(R.string.err_no_key))
             return
         }
         _error.value = null
         _needsSignIn.value = false
         if (settingsStore.current.freshStart) clearConversation()
+        // Set right here and not only once the loop runs: the foreground service watches
+        // this state and would stop itself again if it saw "idle" in the gap.
+        _state.value = LiveState.PREPARING
         loopJob = scope.launch { runLoop() }
     }
 
@@ -171,11 +166,11 @@ class LiveSessionController(
     }
 
     /** Typed input - works with live mode off, too. */
-    fun sendTypedMessage(text: String) {
-        val clean = text.trim()
+    fun sendTypedMessage(message: String) {
+        val clean = message.trim()
         if (clean.isEmpty()) return
         if (keyStore.load() == null) {
-            requireSignIn(context.getString(R.string.err_no_key))
+            reportSignInNeeded(text.get(R.string.err_no_key))
             return
         }
         if (isRunning) {
@@ -206,6 +201,12 @@ class LiveSessionController(
         _error.value = null
     }
 
+    /** Something outside the loop found out that the key is no good. */
+    fun reportSignInNeeded(message: String) {
+        _error.value = message
+        _needsSignIn.value = true
+    }
+
     fun shutdown() {
         stop()
         speaker?.shutdown()
@@ -219,7 +220,7 @@ class LiveSessionController(
         scope.launch {
             _error.value = null
             ensureSpeaker(settingsStore.current)
-            speaker?.speakNow(context.getString(R.string.test_speech_sentence))
+            speaker?.speakNow(text.get(R.string.test_speech_sentence))
         }
     }
 
@@ -227,6 +228,7 @@ class LiveSessionController(
 
     private suspend fun runLoop() {
         var silentRounds = 0
+        var failedRounds = 0
         try {
             prepareForTurn()
             while (currentCoroutineContext().isActive) {
@@ -244,14 +246,15 @@ class LiveSessionController(
                 ensureSpeaker(settings)
 
                 _state.value = LiveState.LISTENING
-                _statusDetail.value = context.getString(R.string.status_listening)
+                _statusDetail.value = text.get(R.string.status_listening)
                 val recognizer = stt ?: break
                 when (val result = recognizer.listenOnce()) {
                     is SttResult.Text -> {
                         silentRounds = 0
+                        failedRounds = 0
                         _partial.value = ""
                         if (VoiceCommands.isStopCommand(result.text)) {
-                            _statusDetail.value = context.getString(R.string.status_stopped_by_voice)
+                            _statusDetail.value = text.get(R.string.status_stopped_by_voice)
                             break
                         }
                         runTurnInChildJob(result.text)
@@ -259,19 +262,23 @@ class LiveSessionController(
                     }
 
                     SttResult.Silence -> {
+                        failedRounds = 0
                         // A typed message may have aborted the listening on purpose.
                         if (pendingTypedInput.get() != null) continue
                         silentRounds++
                         if (silentRounds >= MAX_SILENT_ROUNDS) {
-                            _statusDetail.value = context.getString(R.string.status_paused_after_silence)
+                            _statusDetail.value = text.get(R.string.status_paused_after_silence)
                             break
                         }
-                        _statusDetail.value = context.getString(R.string.status_nothing_heard)
+                        _statusDetail.value = text.get(R.string.status_nothing_heard)
                     }
 
                     is SttResult.Failure -> {
-                        if (result.needsSignIn) requireSignIn(result.message) else _error.value = result.message
-                        if (!result.recoverable) break
+                        if (result.needsSignIn) reportSignInNeeded(result.message) else _error.value = result.message
+                        failedRounds++
+                        // Something that keeps failing is not going to fix itself by being retried
+                        // for ever, and each retry opens the microphone or the network again.
+                        if (!result.recoverable || failedRounds >= MAX_FAILED_ROUNDS) break
                         delay(RETRY_DELAY_MS)
                     }
                 }
@@ -280,7 +287,7 @@ class LiveSessionController(
             throw e
         } catch (t: Throwable) {
             Log.e(TAG, "Live loop aborted", t)
-            _error.value = t.message ?: context.getString(R.string.error_unexpected)
+            _error.value = t.message ?: text.get(R.string.error_unexpected)
         } finally {
             _partial.value = ""
             _level.value = 0f
@@ -306,7 +313,7 @@ class LiveSessionController(
         if (speakAloud) stt?.abort()
         appendMessage(Role.USER, userText, streaming = false)
         _state.value = LiveState.THINKING
-        _statusDetail.value = context.getString(R.string.status_thinking)
+        _statusDetail.value = text.get(R.string.status_thinking)
 
         val assistantId = appendMessage(Role.ASSISTANT, "", streaming = true)
         val chunker = newChunker(settingsStore.current)
@@ -328,12 +335,14 @@ class LiveSessionController(
         } catch (e: MistralException) {
             failed = true
             Log.w(TAG, "Mistral request failed: ${e.message}")
-            if (e.kind == MistralException.Kind.UNAUTHORIZED) requireSignIn(e.userMessage(context))
-            else _error.value = e.userMessage(context)
+            if (e.kind == MistralException.Kind.UNAUTHORIZED) reportSignInNeeded(e.userMessage(text))
+            else _error.value = e.userMessage(text)
+            // What was said before the failure was still spoken - speak the rest of that sentence too.
+            if (speakAloud) chunker.flush()?.let { speakChunk(it) }
         } catch (t: Throwable) {
             failed = true
             Log.e(TAG, "Generation failed", t)
-            _error.value = t.message ?: context.getString(R.string.error_model_no_answer)
+            _error.value = t.message ?: text.get(R.string.error_model_no_answer)
         }
 
         val finalText = SpeechText.forDisplay(collected.toString())
@@ -341,12 +350,12 @@ class LiveSessionController(
             finalText.isNotEmpty() -> updateMessage(assistantId, finalText, streaming = false)
             // Nothing arrived because the request failed: no empty bubble, the banner says why.
             failed -> removeMessage(assistantId)
-            else -> updateMessage(assistantId, context.getString(R.string.no_answer), streaming = false)
+            else -> updateMessage(assistantId, text.get(R.string.no_answer), streaming = false)
         }
 
         if (speakAloud) {
             _state.value = LiveState.SPEAKING
-            _statusDetail.value = context.getString(R.string.status_speaking)
+            _statusDetail.value = text.get(R.string.status_speaking)
             speaker?.awaitIdle()
             // A moment of calm: otherwise the recognizer grabs the audio device
             // while the speech output is still fading out.
@@ -355,11 +364,11 @@ class LiveSessionController(
     }
 
     private fun speakChunk(chunk: String) {
-        val text = SpeechText.forSpeech(chunk)
-        if (text.isEmpty()) return
+        val speakable = SpeechText.forSpeech(chunk)
+        if (speakable.isEmpty()) return
         _state.value = LiveState.SPEAKING
-        _statusDetail.value = context.getString(R.string.status_speaking)
-        speaker?.enqueue(text)
+        _statusDetail.value = text.get(R.string.status_speaking)
+        speaker?.enqueue(speakable)
     }
 
     /**
@@ -374,7 +383,7 @@ class LiveSessionController(
 
     private suspend fun prepareForTurn() {
         _state.value = LiveState.PREPARING
-        _statusDetail.value = context.getString(R.string.status_preparing_speech)
+        _statusDetail.value = text.get(R.string.status_preparing_speech)
         val settings = settingsStore.current
         ensureSpeaker(settings)
         ensureStt(settings)
@@ -386,23 +395,7 @@ class LiveSessionController(
         ).joinToString("|")
         if (stt != null && sttSignature == signature) return
         stt?.destroy()
-        val created: SpeechToText = when (settings.sttEngine) {
-            SttEngine.SYSTEM -> AndroidSpeechToText(
-                context = context,
-                languageTag = settings.sttLanguageTag,
-                preferOnDevice = settings.preferOnDevice,
-                pauseMs = settings.pauseMs,
-            )
-
-            SttEngine.MISTRAL -> MistralSpeechToText(
-                context = context,
-                audio = mistral.audio,
-                transcriptionModel = {
-                    mistral.catalog.value?.transcriptionModelId ?: MistralAudio.DEFAULT_STT_MODEL
-                },
-                pauseMs = settings.pauseMs,
-            )
-        }
+        val created = engines.recognizer(settings)
         stt = created
         sttSignature = signature
         sttRelayJob?.cancel()
@@ -414,54 +407,28 @@ class LiveSessionController(
                     // Heard you, working on the text: show it instead of staying on "listening".
                     if (processing && _state.value == LiveState.LISTENING) {
                         _state.value = LiveState.THINKING
-                        _statusDetail.value = context.getString(R.string.status_understanding)
+                        _statusDetail.value = text.get(R.string.status_understanding)
                     }
                 }
             }
         }
     }
 
-    private suspend fun ensureSpeaker(settings: AppSettings) {
+    private suspend fun ensureSpeaker(settings: AppSettings) = speakerMutex.withLock {
         val signature = listOf(
             settings.ttsEngine, settings.ttsLanguageTag, settings.speechRate, settings.pitch,
             settings.mistralVoiceId,
         ).joinToString("|")
-        if (speaker != null && speakerSignature == signature) return
+        if (speaker != null && speakerSignature == signature) return@withLock
         speaker?.shutdown()
 
-        val device = AndroidSpeaker(
-            context = context,
-            locale = Locale.forLanguageTag(settings.ttsLanguageTag),
-            speechRate = settings.speechRate,
-            pitch = settings.pitch,
-        )
-        val created: Speaker = when (settings.ttsEngine) {
-            TtsEngine.SYSTEM -> device
-            TtsEngine.MISTRAL -> {
-                val voice = settings.mistralVoiceId.ifBlank {
-                    pickVoice(mistral.voicesOrLoad(), settings.ttsLanguageTag)?.id.orEmpty()
-                }
-                if (voice.isEmpty()) {
-                    _error.value = context.getString(R.string.tts_no_mistral_voice)
-                    device
-                } else {
-                    MistralSpeaker(
-                        context = context,
-                        audio = mistral.audio,
-                        modelId = {
-                            mistral.catalog.value?.speechModelId ?: MistralAudio.DEFAULT_TTS_MODEL
-                        },
-                        voiceId = { voice },
-                        fallback = device,
-                        scope = scope,
-                    )
-                }
-            }
-        }
+        val setup = engines.speaker(settings)
+        setup.notice?.let { _error.value = it }
+        val created = setup.speaker
         val ok = created.prepare()
         speaker = created
         speakerSignature = signature
-        if (!ok) _error.value = context.getString(R.string.error_speech_output_failed)
+        if (!ok) _error.value = text.get(R.string.error_speech_output_failed)
         speakerRelayJob?.cancel()
         speakerRelayJob = scope.launch {
             launch { created.warning.collect { it?.let { message -> _error.value = message } } }
@@ -471,21 +438,21 @@ class LiveSessionController(
 
     // ----------------------------------------------------------- conversation
 
-    private fun appendMessage(role: Role, text: String, streaming: Boolean): Long {
+    private fun appendMessage(role: Role, content: String, streaming: Boolean): Long {
         val id = idCounter.incrementAndGet()
         _messages.value = _messages.value + ChatMessage(
             id = id,
             role = role,
-            text = text,
+            text = content,
             timestampMs = System.currentTimeMillis(),
             streaming = streaming,
         )
         return id
     }
 
-    private fun updateMessage(id: Long, text: String, streaming: Boolean) {
+    private fun updateMessage(id: Long, content: String, streaming: Boolean) {
         _messages.value = _messages.value.map {
-            if (it.id == id) it.copy(text = text, streaming = streaming) else it
+            if (it.id == id) it.copy(text = content, streaming = streaming) else it
         }
     }
 
@@ -493,21 +460,15 @@ class LiveSessionController(
         _messages.value = _messages.value.filterNot { it.id == id }
     }
 
-    private fun requireSignIn(message: String) {
-        _error.value = message
-        _needsSignIn.value = true
-    }
-
-    private fun hasMicrophonePermission(): Boolean =
-        ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
-            PackageManager.PERMISSION_GRANTED
-
-    private companion object {
-        const val TAG = "LiveSessionController"
+    companion object {
+        private const val TAG = "LiveSessionController"
 
         /** About a minute and a half of nothing, then live mode pauses itself. */
         const val MAX_SILENT_ROUNDS = 10
-        const val RETRY_DELAY_MS = 800L
-        const val SETTLE_AFTER_SPEECH_MS = 250L
+
+        /** This many recognizer failures in a row end live mode. */
+        const val MAX_FAILED_ROUNDS = 5
+        private const val RETRY_DELAY_MS = 800L
+        private const val SETTLE_AFTER_SPEECH_MS = 250L
     }
 }

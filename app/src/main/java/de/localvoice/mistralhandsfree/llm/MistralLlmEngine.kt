@@ -28,7 +28,8 @@ class MistralLlmEngine(
             messages = messages,
             params = ChatParams(
                 model = current.model,
-                temperature = current.temperature.toDouble(),
+                // 0.7f as a double is 0.699999988...; send what the slider showed.
+                temperature = Math.round(current.temperature * 100) / 100.0,
                 maxTokens = current.maxTokens.takeIf { it > 0 },
             ),
         )

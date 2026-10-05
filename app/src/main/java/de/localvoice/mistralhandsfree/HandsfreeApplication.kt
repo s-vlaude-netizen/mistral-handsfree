@@ -1,14 +1,20 @@
 package de.localvoice.mistralhandsfree
 
+import android.Manifest
 import android.app.Application
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import de.localvoice.mistralhandsfree.auth.ApiKeyStore
 import de.localvoice.mistralhandsfree.auth.KeystoreApiKeyStore
 import de.localvoice.mistralhandsfree.data.SettingsStore
+import de.localvoice.mistralhandsfree.llm.MistralLlmEngine
 import de.localvoice.mistralhandsfree.mistral.MistralAudio
 import de.localvoice.mistralhandsfree.mistral.MistralClient
 import de.localvoice.mistralhandsfree.mistral.MistralHttp
 import de.localvoice.mistralhandsfree.mistral.MistralRepository
 import de.localvoice.mistralhandsfree.session.LiveSessionController
+import de.localvoice.mistralhandsfree.session.TextSource
+import de.localvoice.mistralhandsfree.speech.AndroidSpeechEngines
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -44,11 +50,18 @@ class AppContainer(application: Application) {
 
     val mistral = MistralRepository(MistralClient(http), MistralAudio(http))
 
+    private val text = TextSource.of(application)
+
     val liveSession = LiveSessionController(
-        context = application,
+        text = text,
         settingsStore = settings,
         keyStore = keyStore,
-        mistral = mistral,
+        llm = MistralLlmEngine(mistral.client) { settings.current },
+        engines = AndroidSpeechEngines(application, mistral, applicationScope, text),
+        hasMicrophonePermission = {
+            ContextCompat.checkSelfPermission(application, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+        },
         scope = applicationScope,
     )
 

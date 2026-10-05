@@ -117,7 +117,14 @@ class MainViewModel(application: Application) : ViewModel() {
         viewModelScope.launch {
             _listError.value = null
             container.mistral.refreshCatalog()
-                .onFailure { _listError.value = (it as? MistralException)?.userMessage(app) }
+                .onFailure { failure ->
+                    val error = failure as? MistralException
+                    _listError.value = error?.userMessage(app)
+                    // A key that was revoked since last time: say so now, not on the first turn.
+                    if (error?.kind == MistralException.Kind.UNAUTHORIZED) {
+                        session.reportSignInNeeded(error.userMessage(app))
+                    }
+                }
         }
     }
 
