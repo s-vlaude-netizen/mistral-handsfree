@@ -19,6 +19,8 @@ class AndroidSpeechEngines(
     private val mistral: MistralRepository,
     private val scope: CoroutineScope,
     private val text: TextSource,
+    /** Where Voxtral's audio comes from. The real microphone, except in tests. */
+    private val mic: MicSourceFactory = AudioRecordMic,
 ) : SpeechEngines {
 
     override fun recognizer(settings: AppSettings): SpeechToText {
@@ -37,7 +39,7 @@ class AndroidSpeechEngines(
                 val language = Languages.transcriptionCode(settings.language, phone)
                 MistralSpeechToText(
                     text = text,
-                    mic = AudioRecordMic,
+                    mic = mic,
                     transcribe = { wav ->
                         mistral.audio.transcribe(
                             wav = wav,
