@@ -1,10 +1,14 @@
 package de.localvoice.mistralhandsfree
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -55,9 +59,14 @@ private fun AppRoot() {
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) { granted ->
-        if (granted[Manifest.permission.RECORD_AUDIO] == true && startAfterPermission) {
+        if (startAfterPermission) {
             startAfterPermission = false
-            startLive(context, viewModel)
+            if (granted[Manifest.permission.RECORD_AUDIO] == true) {
+                startLive(context, viewModel)
+            } else {
+                // Nothing starts, but the screen says why - and offers the settings page.
+                viewModel.session.start()
+            }
         }
     }
 
@@ -90,6 +99,7 @@ private fun AppRoot() {
             viewModel = viewModel,
             onOpenSettings = { showSettings = true },
             onSignIn = { replacingKey = true },
+            onOpenAppSettings = { openAppSettings(context) },
             onToggleLive = {
                 if (liveMode) {
                     viewModel.session.stop()
@@ -108,6 +118,17 @@ private fun AppRoot() {
 private fun startLive(context: Context, viewModel: MainViewModel) {
     LiveSessionService.start(context)
     viewModel.session.start()
+}
+
+/** The system page where the microphone can be allowed again after "Don't ask again". */
+private fun openAppSettings(context: Context) {
+    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    try {
+        context.startActivity(intent)
+    } catch (_: ActivityNotFoundException) {
+        // A phone without a settings app: nothing to open.
+    }
 }
 
 private fun hasMicPermission(context: Context): Boolean =

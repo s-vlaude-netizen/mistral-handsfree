@@ -68,10 +68,12 @@ fun LiveScreen(
     onOpenSettings: () -> Unit,
     onToggleLive: () -> Unit,
     onSignIn: () -> Unit,
+    onOpenAppSettings: () -> Unit,
 ) {
     val session = viewModel.session
     val state by session.state.collectAsStateWithLifecycle()
     val liveMode by session.liveMode.collectAsStateWithLifecycle()
+    val needsMicPermission by session.needsMicPermission.collectAsStateWithLifecycle()
     val messages by session.messages.collectAsStateWithLifecycle()
     val statusDetail by session.statusDetail.collectAsStateWithLifecycle()
     val partial by session.partialTranscript.collectAsStateWithLifecycle()
@@ -122,8 +124,12 @@ fun LiveScreen(
             AnimatedVisibility(visible = error != null) {
                 ErrorBanner(
                     text = error.orEmpty(),
-                    actionLabel = if (needsSignIn) stringResource(R.string.sign_in_again) else null,
-                    onAction = onSignIn,
+                    actionLabel = when {
+                        needsMicPermission -> stringResource(R.string.open_app_settings)
+                        needsSignIn -> stringResource(R.string.sign_in_again)
+                        else -> null
+                    },
+                    onAction = if (needsMicPermission) onOpenAppSettings else onSignIn,
                     onDismiss = { session.dismissError() },
                 )
             }
@@ -237,12 +243,14 @@ private fun StatusPanel(
             )
         }
         Spacer(Modifier.height(8.dp))
+        val label = stateLabel(state)
         Text(
-            text = stateLabel(state),
+            text = label,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
         )
-        if (detail.isNotEmpty()) {
+        // "Listening" under "Listening" says nothing new.
+        if (detail.isNotEmpty() && detail != label) {
             Text(
                 text = detail,
                 style = MaterialTheme.typography.bodySmall,

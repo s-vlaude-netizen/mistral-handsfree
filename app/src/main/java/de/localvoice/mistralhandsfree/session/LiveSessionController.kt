@@ -101,6 +101,13 @@ class LiveSessionController(
     private val _needsSignIn = MutableStateFlow(false)
     val needsSignIn: StateFlow<Boolean> = _needsSignIn.asStateFlow()
 
+    /**
+     * Set when the microphone is not allowed: the UI offers the system settings, because
+     * after a second refusal Android no longer shows its permission dialog.
+     */
+    private val _needsMicPermission = MutableStateFlow(false)
+    val needsMicPermission: StateFlow<Boolean> = _needsMicPermission.asStateFlow()
+
     private val _partial = MutableStateFlow("")
     val partialTranscript: StateFlow<String> = _partial.asStateFlow()
 
@@ -132,8 +139,11 @@ class LiveSessionController(
     /** Starts hands-free mode. */
     fun start() {
         if (isRunning) return
+        _needsMicPermission.value = false
         if (!hasMicrophonePermission()) {
             _error.value = text.get(R.string.error_no_mic_permission)
+            _needsSignIn.value = false
+            _needsMicPermission.value = true
             return
         }
         if (keyStore.load() == null) {
@@ -212,6 +222,7 @@ class LiveSessionController(
 
     fun dismissError() {
         _error.value = null
+        _needsMicPermission.value = false
     }
 
     /** Called once a working key has been saved: clears the "please sign in" state. */

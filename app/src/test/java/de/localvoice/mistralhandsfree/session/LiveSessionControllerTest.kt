@@ -153,7 +153,11 @@ class LiveSessionControllerTest {
     }
 
     /** Everything wired up, with the fakes at hand. */
-    private class Rig(scope: CoroutineScope, microphone: Boolean = true, key: String? = "key") {
+    private class Rig(scope: CoroutineScope, microphoneAllowed: Boolean = true, key: String? = "key") {
+        /** What the system answers when the controller asks whether the microphone is allowed. */
+        @Volatile
+        var microphone = microphoneAllowed
+
         val speaker = FakeSpeaker()
         val llm = FakeLlm()
         val settings = FakeSettings()
@@ -642,6 +646,45 @@ class LiveSessionControllerTest {
         assertEquals(TEXT.get(R.string.error_no_mic_permission), rig.controller.error.value)
         assertEquals(LiveState.IDLE, rig.controller.state.value)
         assertFalse(rig.controller.isRunning)
+        // Android stops asking after the second refusal, so the screen has to point to the settings.
+        assertTrue(rig.controller.needsMicPermission.value)
+        assertFalse(rig.controller.needsSignIn.value)
+    }
+
+    @Test
+    fun `the microphone hint goes away when the error is dismissed`() = runTest {
+        val rig = rig(microphone = false)
+        rig.controller.start()
+
+        rig.controller.dismissError()
+
+        assertNull(rig.controller.error.value)
+        assertFalse(rig.controller.needsMicPermission.value)
+    }
+
+    @Test
+    fun `starting again once the microphone is allowed clears the error and listens`() = runTest {
+        val rig = rig(microphone = false)
+        rig.controller.start()
+        assertTrue(rig.controller.needsMicPermission.value)
+
+        rig.microphone = true // the user allowed it in the settings
+        startLive(rig)
+
+        assertFalse(rig.controller.needsMicPermission.value)
+        assertNull(rig.controller.error.value)
+        assertEquals(LiveState.LISTENING, rig.controller.state.value)
+    }
+
+    @Test
+    fun `a missing microphone is reported before a missing key`() = runTest {
+        // Both are missing. The microphone is checked first, and only one banner can be shown.
+        val rig = rig(microphone = false, key = null)
+        rig.controller.start()
+
+        assertEquals(TEXT.get(R.string.error_no_mic_permission), rig.controller.error.value)
+        assertTrue(rig.controller.needsMicPermission.value)
+        assertFalse(rig.controller.needsSignIn.value)
     }
 
     @Test

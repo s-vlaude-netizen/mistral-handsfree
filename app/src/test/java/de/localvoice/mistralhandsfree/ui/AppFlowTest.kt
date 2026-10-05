@@ -1,7 +1,11 @@
 package de.localvoice.mistralhandsfree.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.provider.Settings
 import androidx.annotation.StringRes
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -19,6 +23,7 @@ import de.localvoice.mistralhandsfree.AppContainer
 import de.localvoice.mistralhandsfree.HandsfreeApplication
 import de.localvoice.mistralhandsfree.MainActivity
 import de.localvoice.mistralhandsfree.R
+import de.localvoice.mistralhandsfree.service.LiveSessionService
 import de.localvoice.mistralhandsfree.data.SttEngine
 import de.localvoice.mistralhandsfree.data.TtsEngine
 import de.localvoice.mistralhandsfree.testing.InMemoryKeyStore
@@ -29,12 +34,14 @@ import okhttp3.mockwebserver.MockWebServer
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
@@ -216,6 +223,66 @@ class AppFlowTest {
         waitForText(string(R.string.signin_title))
         // The old key is still there until a working one replaces it, so there is a way back.
         compose.onNodeWithText(string(R.string.cancel)).assertExists()
+    }
+
+    // --------------------------------------------------------------- the microphone
+
+    /**
+     * What the system's permission dialog sends back, delivered through the same
+     * result machinery the real dialog uses. The callback is deprecated for apps to
+     * override, but it is exactly what the system calls.
+     */
+    @Suppress("DEPRECATION")
+    private fun answerPermissionDialog(granted: Boolean) {
+        scenario!!.onActivity { activity ->
+            val request = shadowOf(activity).lastRequestedPermission
+            assertNotNull("the app never asked for a permission", request)
+            val answer = if (granted) PackageManager.PERMISSION_GRANTED else PackageManager.PERMISSION_DENIED
+            activity.onRequestPermissionsResult(
+                request.requestCode,
+                request.requestedPermissions,
+                IntArray(request.requestedPermissions.size) { answer },
+            )
+        }
+    }
+
+    @Test
+    fun `refusing the microphone says so and leads to the settings`() {
+        install(signedInWith = goodKey)
+        launch()
+        waitForText(string(R.string.start_live))
+
+        compose.onNodeWithText(string(R.string.start_live)).performClick()
+        answerPermissionDialog(granted = false)
+
+        // Without this, a refusal looked like a button that does nothing - for good once
+        // Android stops showing its dialog.
+        waitForText(string(R.string.error_no_mic_permission))
+        screenshot("12-live-microphone-refused")
+        assertNull("no service without a microphone", shadowOf(app).peekNextStartedService())
+
+        compose.onNodeWithText(string(R.string.open_app_settings)).performClick()
+        val opened = shadowOf(app).nextStartedActivity
+        assertEquals(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, opened.action)
+        assertEquals("package:${app.packageName}", opened.dataString)
+    }
+
+    @Test
+    fun `allowing the microphone starts live mode`() {
+        install(signedInWith = goodKey)
+        launch()
+        waitForText(string(R.string.start_live))
+
+        compose.onNodeWithText(string(R.string.start_live)).performClick()
+        shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO) // what "Allow" does
+        answerPermissionDialog(granted = true)
+
+        waitForText(string(R.string.stop_live))
+        waitForText(string(R.string.state_listening))
+        // The state and its detail are both "Listening"; the screen says it once.
+        compose.onAllNodesWithText(string(R.string.state_listening)).assertCountEquals(1)
+        screenshot("13-live-listening")
+        assertEquals(LiveSessionService::class.java.name, shadowOf(app).nextStartedService.component?.className)
     }
 
     // --------------------------------------------------------------- a conversation

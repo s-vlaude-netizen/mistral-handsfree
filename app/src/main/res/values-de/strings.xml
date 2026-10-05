@@ -41,6 +41,7 @@
     <string name="speaker_assistant">Mistral</string>
     <string name="no_answer">(keine Antwort)</string>
     <string name="sign_in_again">Anmelden</string>
+    <string name="open_app_settings">App-Einstellungen öffnen</string>
     <string name="empty_title">Noch nichts gesagt.</string>
     <string name="empty_body">Starte den Live-Modus, leg das Telefon weg und sprich einfach los. Sobald du eine Pause machst, geht deine Nachricht von selbst raus, die Antwort wird vorgelesen, und danach hört die App wieder zu. „Stopp“ beendet das Gespräch, ohne dass du etwas berühren musst.</string>
 

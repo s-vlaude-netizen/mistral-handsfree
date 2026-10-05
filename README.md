@@ -61,8 +61,9 @@ is excluded from backups, and is only ever sent to `api.mistral.ai`. *Replace ke
 and *Sign out* are in the settings.
 
 No Mistral account yet? Mistral has a free API plan for experimenting (it asks for a
-phone number and has rate limits — see their pricing page for the current terms).
-Note that the API is billed separately from a Le Chat subscription.
+phone number and has rate limits). Read their current terms before you rely on it —
+including what they say about how your data may be used on each plan. Note that the
+API is billed separately from a Le Chat subscription.
 
 ## How "no button" works — silence detection
 
