@@ -1,0 +1,145 @@
+name: Android
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  # The release step attaches the APK.
+  contents: write
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Becomes the versionCode. It has to go up, or Android refuses the update as a downgrade.
+  VERSION_CODE: ${{ github.run_number }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      # Optional. Without these secrets the APK is signed with the key committed in
+      # keystore/ (see "Signing" in the README). With them, CI signs with a key that
+      # exists nowhere in the repo - which is what you want once the app holds your
+      # Mistral API key. Secrets are not available to pull requests from forks.
+      - name: Use the private signing key, if one is configured
+        env:
+          KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            {
+              echo "SIGNING_KEYSTORE_FILE=$RUNNER_TEMP/release.jks"
+              echo "SIGNING_STORE_PASSWORD=$STORE_PASSWORD"
+              echo "SIGNING_KEY_ALIAS=$KEY_ALIAS"
+              echo "SIGNING_KEY_PASSWORD=$KEY_PASSWORD"
+              echo "PRIVATE_KEY=true"
+            } >> "$GITHUB_ENV"
+            echo "Signing with the private key from the repository secrets."
+          else
+            echo "No private signing key configured - using the key committed in keystore/."
+          fi
+
+      - name: Unit tests
+        run: ./gradlew --no-daemon testDebugUnitTest
+
+      - name: Build APK
+        run: ./gradlew --no-daemon assembleRelease
+
+      - name: Lint
+        run: ./gradlew --no-daemon lintDebug
+        continue-on-error: true
+
+      - name: Name the APK and check the signature
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/$APK_NAME"
+
+          # Several build-tools versions sit side by side on the runner;
+          # without a choice the glob expands to several paths.
+          apksigner=$(ls -1 "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
+          "$apksigner" verify --print-certs "dist/$APK_NAME" | tee signature.txt
+
+          # With the committed key, a different fingerprint means the key was swapped by
+          # accident - and then no update would install over the previous version. Better
+          # to find out here than on the phone. A private key has its own fingerprint.
+          if [ "${PRIVATE_KEY:-}" != "true" ]; then
+            if ! grep -qi "SHA-256 digest: $EXPECTED_FINGERPRINT" signature.txt; then
+              echo "::error::The signature differs from the expected key - updates would break."
+              exit 1
+            fi
+          fi
+        env:
+          APK_NAME: handsfree-for-mistral.apk
+          EXPECTED_FINGERPRINT: 5c3f250b96a7066d7f1132b10f0d6a327bdd23f8ee2f3a994472dbbd104a55f4
+
+      - name: Upload the APK as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: handsfree-for-mistral-apk
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      # A rolling release, so that the download link in the README stays the same.
+      - name: Update the release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: dev-latest
+        run: |
+          if [ "${PRIVATE_KEY:-}" = "true" ]; then
+            SIGNED="signed with the maintainer's private key"
+          else
+            SIGNED="signed with the key committed in the repo (see \"Signing\" in the README)"
+          fi
+          NOTES=$(printf '%s\n' \
+            "Automatically built development version from \`${GITHUB_REF_NAME}\`." \
+            "" \
+            "- Version: 0.1.${VERSION_CODE} (versionCode ${VERSION_CODE})" \
+            "- Commit: ${GITHUB_SHA}" \
+            "- Unofficial client; not affiliated with Mistral AI" \
+            "- APK ${SIGNED}, so updates install over the previous version" \
+            "" \
+            "This release is replaced on every push to the development branch.")
+          gh release delete "$TAG" --yes --cleanup-tag || true
+          gh release create "$TAG" dist/*.apk \
+            --title "Handsfree for Mistral - development build" \
+            --notes "$NOTES" \
+            --target "$GITHUB_SHA" \
+            --latest
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            app/build/reports/tests/**
+            app/build/reports/lint-results-*.html
+          if-no-files-found: ignore
+          retention-days: 7

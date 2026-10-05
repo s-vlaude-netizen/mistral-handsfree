@@ -1,0 +1,18 @@
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+build/
+.kotlin/
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+*.apk
+*.aab
+
+# The signing key is part of the repo on purpose - see keystore/keystore.properties
+# and the "Signing" section of the README.
+!keystore/
+!keystore/*.jks

@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Freisprechen für Mistral</string>
+    <string name="unknown">unbekannt</string>
+    <string name="ok">OK</string>
+    <string name="close">Schließen</string>
+    <string name="cancel">Abbrechen</string>
+    <string name="back">Zurück</string>
+    <string name="refresh">Aktualisieren</string>
+    <string name="use_this">Übernehmen</string>
+
+    <!-- Notification -->
+    <string name="notification_channel_name">Live-Modus</string>
+    <string name="notification_channel_description">Läuft, solange ein Gespräch aktiv ist.</string>
+    <string name="notification_stop">Beenden</string>
+
+    <!-- States -->
+    <string name="state_idle">Bereit</string>
+    <string name="state_preparing">Wird vorbereitet</string>
+    <string name="state_listening">Ich höre zu</string>
+    <string name="state_thinking">Ich denke nach</string>
+    <string name="state_speaking">Ich spreche</string>
+    <string name="status_preparing_speech">Sprachdienste werden gestartet</string>
+    <string name="status_listening">Ich höre zu</string>
+    <string name="status_understanding">Ich verstehe dich</string>
+    <string name="status_thinking">Ich denke nach</string>
+    <string name="status_speaking">Ich lese vor</string>
+    <string name="status_stopped_by_voice">Beendet auf Zuruf</string>
+    <string name="status_nothing_heard">Nichts gehört – ich warte weiter</string>
+    <string name="status_paused_after_silence">Nach einer ruhigen Weile pausiert</string>
+
+    <!-- Live screen -->
+    <string name="clear_history">Verlauf leeren</string>
+    <string name="open_settings">Einstellungen</string>
+    <string name="keyboard">Tastatur</string>
+    <string name="send">Senden</string>
+    <string name="type_instead">Tippen statt sprechen</string>
+    <string name="interrupt_answer">Antwort abbrechen</string>
+    <string name="start_live">Live-Modus starten</string>
+    <string name="stop_live">Live-Modus beenden</string>
+    <string name="speaker_you">Du</string>
+    <string name="speaker_assistant">Mistral</string>
+    <string name="no_answer">(keine Antwort)</string>
+    <string name="sign_in_again">Anmelden</string>
+    <string name="empty_title">Noch nichts gesagt.</string>
+    <string name="empty_body">Starte den Live-Modus, leg das Telefon weg und sprich einfach los. Sobald du eine Pause machst, geht deine Nachricht von selbst raus, die Antwort wird vorgelesen, und danach hört die App wieder zu. „Stopp“ beendet das Gespräch, ohne dass du etwas berühren musst.</string>
+
+    <!-- Errors -->
+    <string name="error_no_mic_permission">Ohne Mikrofon-Berechtigung geht es nicht.</string>
+    <string name="error_speech_output_failed">Die Sprachausgabe ließ sich nicht starten.</string>
+    <string name="error_model_no_answer">Mistral konnte nicht antworten.</string>
+    <string name="error_unexpected">Unerwarteter Fehler im Live-Modus.</string>
+    <string name="err_no_key">Es gibt noch keinen API-Schlüssel. Melde dich zuerst an.</string>
+    <string name="err_unauthorized">Mistral hat den API-Schlüssel abgelehnt. Melde dich mit einem gültigen Schlüssel neu an.</string>
+    <string name="err_forbidden">Mistral hat die Anfrage verweigert (keine Berechtigung für dieses Modell oder diese Funktion).</string>
+    <string name="err_forbidden_detail">Mistral hat die Anfrage verweigert: %1$s</string>
+    <string name="err_rate_limited">Mistral drosselt gerade die Anfragen. Warte einen Moment und versuche es erneut.</string>
+    <string name="err_bad_request">Mistral konnte die Anfrage nicht verarbeiten.</string>
+    <string name="err_bad_request_detail">Mistral konnte die Anfrage nicht verarbeiten: %1$s</string>
+    <string name="err_server">Bei Mistral gibt es gerade ein Problem. Versuche es gleich noch einmal.</string>
+    <string name="err_network">Keine Verbindung zu Mistral. Prüfe deine Internetverbindung.</string>
+    <string name="err_protocol">Mistral hat eine Antwort geschickt, die diese App nicht versteht.</string>
+    <string name="err_http">Mistral antwortete mit Fehler %1$d. %2$s</string>
+
+    <!-- Sign-in -->
+    <string name="signin_title">Bei Mistral anmelden</string>
+    <string name="signin_intro">Sprich mit den Modellen von Mistral, ohne den Bildschirm zu berühren. Die App braucht dafür einen API-Schlüssel aus deinem Mistral-Konto.</string>
+    <string name="signin_step1_title">Bei Mistral anmelden</string>
+    <string name="signin_step1_body">Das öffnet die Mistral-Konsole in deinem Browser. Melde dich so an, wie du es immer tust – Google, Microsoft, Apple oder E-Mail. Diese App sieht dein Passwort nie.</string>
+    <string name="signin_open_console">Mistral-Konsole öffnen</string>
+    <string name="signin_no_browser">Es wurde kein Browser gefunden, der die Seite öffnen kann. Öffne stattdessen console.mistral.ai auf einem beliebigen Gerät.</string>
+    <string name="signin_step2_title">API-Schlüssel erstellen</string>
+    <string name="signin_step2_body">Öffne in der Konsole im Menü „API keys“, tippe auf „Create new key“ und kopiere den Schlüssel – er wird nur einmal angezeigt. Noch kein Konto? Mistral bietet einen kostenlosen Tarif zum Ausprobieren; dafür wird eine Telefonnummer verlangt.</string>
+    <string name="signin_step3_title">Schlüssel hier einfügen</string>
+    <string name="signin_key_label">API-Schlüssel</string>
+    <string name="signin_paste">Einfügen</string>
+    <string name="signin_continue">Weiter</string>
+    <string name="signin_checking">Wird geprüft …</string>
+    <string name="signin_toggle_visibility">Schlüssel ein- oder ausblenden</string>
+    <string name="signin_implausible">Das sieht nicht nach einem API-Schlüssel aus. Kopiere den Schlüssel selbst aus der Konsole.</string>
+    <string name="signin_rejected">Mistral hat diesen Schlüssel nicht akzeptiert. Prüfe, ob du ihn vollständig kopiert hast.</string>
+    <string name="signin_store_failed">Der Schlüssel ließ sich nicht sicher auf diesem Gerät speichern.</string>
+    <string name="signin_fine_print">Mistral bietet für andere Apps kein „Mit Google anmelden“ – nur API-Schlüssel. Der Schlüssel wird verschlüsselt auf diesem Gerät gespeichert und nur an api.mistral.ai gesendet. Die Nutzung wird deinem Mistral-Konto berechnet. Dies ist eine inoffizielle App und nicht mit Mistral AI verbunden.</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Einstellungen</string>
+    <string name="section_account">Konto</string>
+    <string name="account_key">Angemeldet mit API-Schlüssel %1$s</string>
+    <string name="account_replace">Schlüssel ersetzen</string>
+    <string name="account_sign_out">Abmelden</string>
+    <string name="account_note">Beim Abmelden wird der Schlüssel von diesem Gerät gelöscht. In deiner Mistral-Konsole bleibt er gültig, bis du ihn dort löschst.</string>
+
+    <string name="section_model">Modell</string>
+    <string name="model_label">Chat-Modell</string>
+    <string name="model_other">Andere Modell-ID</string>
+    <string name="models_not_loaded">Die Modellliste wurde nicht geladen. Prüfe die Verbindung und aktualisiere, oder gib unten eine Modell-ID ein.</string>
+    <string name="temperature">Temperatur</string>
+    <string name="max_answer_length">Maximale Antwortlänge</string>
+    <string name="tokens_value">%1$d Token</string>
+
+    <string name="section_conversation">Gespräch</string>
+    <string name="hands_free_title">Freisprechmodus</string>
+    <string name="hands_free_subtitle">Nach jeder Antwort automatisch wieder zuhören</string>
+    <string name="fresh_start_title">Neu anfangen</string>
+    <string name="fresh_start_subtitle">Verlauf leeren, sobald der Live-Modus startet</string>
+    <string name="section_system_prompt">Systemanweisung</string>
+
+    <string name="section_listening">Zuhören</string>
+    <string name="stt_engine_system">Spracherkennung des Telefons</string>
+    <string name="stt_engine_system_note">Kostenlos und sofort startklar. Die Erkennung des Telefons entscheidet, wann du fertig bist, und schickt das Audio womöglich an Google.</string>
+    <string name="stt_engine_mistral">Mistral Voxtral</string>
+    <string name="stt_engine_mistral_note">Das Audio geht an Mistral (Abrechnung pro Minute, das ist sehr wenig). Die App wartet genau die eingestellte Pause ab. Kein Signalton beim Start, die Sprache wird automatisch erkannt.</string>
+    <string name="pause_label">Pause, die deinen Beitrag beendet</string>
+    <string name="pause_note_mistral">Nach dieser Stille wird deine Nachricht abgeschickt. Erhöhe den Wert, wenn du beim Nachdenken unterbrochen wirst.</string>
+    <string name="pause_note_system">Nur ein Hinweis für die Erkennung des Telefons, viele ignorieren ihn. Für eine genaue Pause wähle Mistral Voxtral.</string>
+    <string name="stt_language_label">Sprache (z. B. de-DE)</string>
+    <string name="on_device_title">Erkennung auf dem Gerät bevorzugen</string>
+    <string name="on_device_subtitle">Das Audio bleibt auf dem Telefon; braucht das Offline-Sprachpaket</string>
+
+    <string name="section_voice">Stimme</string>
+    <string name="tts_engine_system">Stimme des Telefons</string>
+    <string name="tts_engine_system_note">Kostenlos, startet sofort und funktioniert offline.</string>
+    <string name="tts_engine_mistral">Mistral-Voxtral-Stimme</string>
+    <string name="tts_engine_mistral_note">Natürliche, ausdrucksstarke Stimmen, Abrechnung pro Zeichen. Fällt auf die Stimme des Telefons zurück, wenn Mistral nicht sprechen kann.</string>
+    <string name="voice_label">Stimme</string>
+    <string name="voice_automatic">Automatisch</string>
+    <string name="voice_automatic_note">Wählt eine Stimme, die die Sprache spricht</string>
+    <string name="voices_none">Für dieses Konto wurden keine Stimmen gefunden.</string>
+    <string name="tts_language_label">Sprache (z. B. de-DE)</string>
+    <string name="speech_rate">Sprechtempo</string>
+    <string name="test_speech_button">Stimme testen</string>
+    <string name="test_speech_sentence">Die Sprachausgabe funktioniert. Wenn du das hörst, ist alles in Ordnung.</string>
+
+    <string name="section_about">Über die App</string>
+    <string name="about_text">Freisprechen für Mistral ist ein inoffizieller Open-Source-Client. Er ist weder mit Mistral AI verbunden noch von Mistral AI unterstützt. Dein Gespräch wird an die API von Mistral gesendet. Audio verlässt das Telefon nur, wenn du oben eine Sprachoption wählst, die das ausdrücklich sagt.</string>
+
+    <!-- Speech recognition -->
+    <string name="stt_no_recognizer">Auf diesem Gerät ist keine Spracherkennung eingerichtet.</string>
+    <string name="stt_start_failed">Die Spracherkennung ließ sich nicht starten.</string>
+    <string name="stt_busy">Die Spracherkennung war beschäftigt.</string>
+    <string name="stt_no_permission">Die App darf das Mikrofon nicht benutzen.</string>
+    <string name="stt_language_missing_offline">Für %1$s ist kein Offline-Sprachpaket installiert. Lade es in den Systemeinstellungen unter Spracheingabe herunter oder schalte „Erkennung auf dem Gerät bevorzugen“ aus.</string>
+    <string name="stt_language_unsupported">Die Erkennung des Telefons unterstützt %1$s nicht.</string>
+    <string name="stt_network">Die Spracherkennung braucht eine Verbindung und konnte ihren Server nicht erreichen.</string>
+    <string name="stt_error_code">Die Spracherkennung meldet Fehler %1$d.</string>
+    <string name="stt_mic_failed">Das Mikrofon ließ sich nicht auslesen.</string>
+    <string name="stt_mic_busy">Eine andere App benutzt gerade das Mikrofon.</string>
+
+    <!-- Speech output -->
+    <string name="tts_not_started">Sprachausgabe noch nicht gestartet</string>
+    <string name="tts_no_engine">Auf diesem Gerät ist keine Sprachausgabe eingerichtet.</string>
+    <string name="tts_no_engine_short">Keine Text-zu-Sprache-Engine gefunden</string>
+    <string name="tts_engine_default_voice">Standard der Engine</string>
+    <string name="tts_diagnostics">Engine: %1$s | Stimme: %2$s | Sprache: %3$s</string>
+    <string name="tts_diagnostics_mistral">Mistral %1$s | Stimme: %2$s …</string>
+    <string name="tts_language_missing">Die Sprachdaten für %1$s fehlen. Installiere sie in den Systemeinstellungen unter Text-in-Sprache-Ausgabe.</string>
+    <string name="tts_no_voice">Für %1$s ist keine Stimme installiert. Ohne eine bleibt das Telefon stumm.</string>
+    <string name="tts_not_ready">Die Sprachausgabe war nicht bereit, der Satz ging verloren.</string>
+    <string name="tts_failed">Die Sprachausgabe stoppte mit Fehler %1$d.</string>
+    <string name="tts_rejected">Die Sprachausgabe hat den Satz abgelehnt (Code %1$d).</string>
+    <string name="tts_mistral_failed">Die Stimme von Mistral ist ausgefallen (%1$s). Es spricht stattdessen die Stimme des Telefons.</string>
+    <string name="tts_no_mistral_voice">Für dieses Konto ist keine Mistral-Stimme verfügbar. Es spricht die Stimme des Telefons.</string>
+
+    <!-- The instruction every conversation starts with -->
+    <string name="default_system_prompt">Du bist ein Sprachassistent in einem Freisprech-Gespräch. Der Nutzer spricht mit dir und hört deine Antwort vorgelesen. Antworte in der Sprache, in der der Nutzer spricht. Fasse dich kurz und natürlich: Zwei oder drei Sätze genügen meistens, es sei denn, der Nutzer möchte mehr. Kein Markdown, keine Listen, keine Überschriften, keine Emojis und keine Internetadressen – alles wird vorgelesen. Schreibe Zahlen und Symbole so, wie man sie ausspricht, wenn das Missverständnisse vermeidet.</string>
+</resources>
