@@ -81,6 +81,7 @@ fun SignInScreen(
     var key by rememberSaveable { mutableStateOf("") }
     var visible by rememberSaveable { mutableStateOf(false) }
     var browserMissing by rememberSaveable { mutableStateOf(false) }
+    var clipboardEmpty by rememberSaveable { mutableStateOf(false) }
 
     val checking = state is SignInState.Checking
 
@@ -154,6 +155,7 @@ fun SignInScreen(
                     value = key,
                     onValueChange = {
                         key = it
+                        clipboardEmpty = false
                         if (state is SignInState.Failed) viewModel.resetSignIn()
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -179,6 +181,13 @@ fun SignInScreen(
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
+                if (clipboardEmpty) {
+                    Text(
+                        stringResource(R.string.signin_clipboard_empty),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -188,6 +197,8 @@ fun SignInScreen(
                         enabled = !checking,
                         onClick = {
                             val pasted = readClipboard(context)
+                            // Say so, or the button looks broken.
+                            clipboardEmpty = pasted.isBlank()
                             if (pasted.isNotBlank()) {
                                 key = pasted
                                 // A plausible key is checked right away: one tap instead of two.

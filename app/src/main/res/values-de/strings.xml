@@ -74,6 +74,7 @@
     <string name="signin_step3_title">Schlüssel hier einfügen</string>
     <string name="signin_key_label">API-Schlüssel</string>
     <string name="signin_paste">Einfügen</string>
+    <string name="signin_clipboard_empty">Nichts zum Einfügen. Kopiere zuerst den Schlüssel in der Konsole.</string>
     <string name="signin_continue">Weiter</string>
     <string name="signin_checking">Wird geprüft …</string>
     <string name="signin_toggle_visibility">Schlüssel ein- oder ausblenden</string>
@@ -136,7 +137,7 @@
     <string name="about_text">Freisprechen für Mistral ist ein inoffizieller Open-Source-Client. Er ist weder mit Mistral AI verbunden noch von Mistral AI unterstützt. Dein Gespräch wird an die API von Mistral gesendet. Audio verlässt das Telefon nur, wenn du oben eine Sprachoption wählst, die das ausdrücklich sagt.</string>
 
     <!-- Speech recognition -->
-    <string name="stt_no_recognizer">Auf diesem Gerät ist keine Spracherkennung eingerichtet.</string>
+    <string name="stt_no_recognizer">Auf diesem Gerät ist keine Spracherkennung eingerichtet. Mistral Voxtral kommt ohne sie aus: Wähle es unter Einstellungen → Zuhören.</string>
     <string name="stt_start_failed">Die Spracherkennung ließ sich nicht starten.</string>
     <string name="stt_busy">Die Spracherkennung war beschäftigt.</string>
     <string name="stt_no_permission">Die App darf das Mikrofon nicht benutzen.</string>

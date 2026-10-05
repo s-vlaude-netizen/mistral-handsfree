@@ -18,6 +18,7 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -91,8 +92,9 @@ class LiveSessionServiceTest {
     @Test
     fun `shows a foreground notification and holds a wake lock while live mode runs`() {
         session.start()
-        // The service is started in the same breath, so the state is already "preparing".
-        assertEquals(LiveState.PREPARING, session.state.value)
+        // start() leaves "idle" synchronously; the loop then moves on at its own pace, so the
+        // exact state is not fixed. It must never be "idle" here, or the service stops at once.
+        assertNotEquals(LiveState.IDLE, session.state.value)
 
         startService()
 

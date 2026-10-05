@@ -74,6 +74,7 @@
     <string name="signin_step3_title">Paste the key here</string>
     <string name="signin_key_label">API key</string>
     <string name="signin_paste">Paste</string>
+    <string name="signin_clipboard_empty">Nothing to paste. Copy the key in the console first.</string>
     <string name="signin_continue">Continue</string>
     <string name="signin_checking">Checking…</string>
     <string name="signin_toggle_visibility">Show or hide the key</string>
@@ -136,7 +137,7 @@
     <string name="about_text">Handsfree for Mistral is an unofficial, open-source client. It is not affiliated with or endorsed by Mistral AI. Your conversation is sent to Mistral\'s API. Audio leaves the phone only if you choose a speech option above that says so.</string>
 
     <!-- Speech recognition -->
-    <string name="stt_no_recognizer">No speech recognition is set up on this device.</string>
+    <string name="stt_no_recognizer">No speech recognition is set up on this device. Mistral Voxtral works without it: choose it under Settings → Listening.</string>
     <string name="stt_start_failed">Speech recognition could not be started.</string>
     <string name="stt_busy">Speech recognition was busy.</string>
     <string name="stt_no_permission">The app is not allowed to use the microphone.</string>

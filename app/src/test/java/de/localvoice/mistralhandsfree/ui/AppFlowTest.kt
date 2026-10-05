@@ -1,6 +1,8 @@
 package de.localvoice.mistralhandsfree.ui
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.provider.Settings
@@ -187,6 +189,36 @@ class AppFlowTest {
         waitForText(string(R.string.start_live))
 
         assertEquals(goodKey, keys.key)
+    }
+
+    @Test
+    fun `pasting a key from the clipboard signs in with that one tap`() {
+        launch()
+        waitForText(string(R.string.signin_title))
+        val clipboard = app.getSystemService(ClipboardManager::class.java)
+        clipboard.setPrimaryClip(ClipData.newPlainText("key", goodKey))
+
+        compose.onNodeWithText(string(R.string.signin_paste)).performClick()
+        waitForText(string(R.string.start_live))
+
+        assertEquals(goodKey, keys.key)
+    }
+
+    @Test
+    fun `pasting with nothing on the clipboard says so`() {
+        launch()
+        waitForText(string(R.string.signin_title))
+
+        compose.onNodeWithText(string(R.string.signin_paste)).performClick()
+
+        // Otherwise the button looks broken.
+        waitForText(string(R.string.signin_clipboard_empty))
+        screenshot("03b-signin-clipboard-empty")
+        assertNull(keys.key)
+
+        // Typing takes the hint away again.
+        typeKey("abc")
+        waitForNoText(string(R.string.signin_clipboard_empty))
     }
 
     // ----------------------------------------------------------- already signed in
