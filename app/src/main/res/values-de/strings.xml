@@ -7,7 +7,6 @@
     <string name="cancel">Abbrechen</string>
     <string name="back">Zurück</string>
     <string name="refresh">Aktualisieren</string>
-    <string name="use_this">Übernehmen</string>
 
     <!-- Notification -->
     <string name="notification_channel_name">Live-Modus</string>
@@ -92,7 +91,8 @@
 
     <string name="section_model">Modell</string>
     <string name="model_label">Chat-Modell</string>
-    <string name="model_other">Andere Modell-ID</string>
+    <string name="model_hint">Tippe eine beliebige Modell-ID ein – etwa die eines feinabgestimmten Modells – oder wähle über den Pfeil aus der Liste deines Kontos.</string>
+    <string name="choose_model">Aus der Liste wählen</string>
     <string name="models_not_loaded">Die Modellliste wurde nicht geladen. Prüfe die Verbindung und aktualisiere, oder gib unten eine Modell-ID ein.</string>
     <string name="temperature">Temperatur</string>
     <string name="max_answer_length">Maximale Antwortlänge</string>

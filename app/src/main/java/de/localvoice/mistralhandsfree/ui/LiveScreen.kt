@@ -71,6 +71,7 @@ fun LiveScreen(
 ) {
     val session = viewModel.session
     val state by session.state.collectAsStateWithLifecycle()
+    val liveMode by session.liveMode.collectAsStateWithLifecycle()
     val messages by session.messages.collectAsStateWithLifecycle()
     val statusDetail by session.statusDetail.collectAsStateWithLifecycle()
     val partial by session.partialTranscript.collectAsStateWithLifecycle()
@@ -180,6 +181,7 @@ fun LiveScreen(
 
             ControlBar(
                 state = state,
+                liveMode = liveMode,
                 onToggleLive = onToggleLive,
                 onInterrupt = { session.interruptCurrentTurn() },
                 onToggleKeyboard = { showKeyboardInput = !showKeyboardInput },
@@ -262,11 +264,12 @@ private fun StatusPanel(
 @Composable
 private fun ControlBar(
     state: LiveState,
+    liveMode: Boolean,
     onToggleLive: () -> Unit,
     onInterrupt: () -> Unit,
     onToggleKeyboard: () -> Unit,
 ) {
-    val running = state != LiveState.IDLE
+    val running = liveMode
     Surface(tonalElevation = 3.dp) {
         Row(
             modifier = Modifier

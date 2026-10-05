@@ -141,5 +141,6 @@ jobs:
           path: |
             app/build/reports/tests/**
             app/build/reports/lint-results-*.html
+            app/build/outputs/ui-screenshots/**
           if-no-files-found: ignore
           retention-days: 7

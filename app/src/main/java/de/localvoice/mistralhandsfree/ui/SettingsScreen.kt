@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -115,16 +116,24 @@ fun SettingsScreen(
             }
 
             Section(title = stringResource(R.string.section_model)) {
-                PickerRow(
-                    label = stringResource(R.string.model_label),
+                OutlinedTextField(
                     value = settings.model,
-                    onClick = { showModelPicker = true },
-                    trailing = {
-                        if (loading) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        } else {
-                            IconButton(onClick = { viewModel.refreshModels() }) {
-                                Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.refresh))
+                    onValueChange = { value -> viewModel.updateSettings { it.copy(model = value.trim()) } },
+                    label = { Text(stringResource(R.string.model_label)) },
+                    supportingText = { Text(stringResource(R.string.model_hint)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    trailingIcon = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (loading) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            } else {
+                                IconButton(onClick = { viewModel.refreshModels() }) {
+                                    Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.refresh))
+                                }
+                            }
+                            IconButton(onClick = { showModelPicker = true }) {
+                                Icon(Icons.Filled.ArrowDropDown, contentDescription = stringResource(R.string.choose_model))
                             }
                         }
                     },
@@ -338,42 +347,26 @@ private fun ModelPickerDialog(
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var custom by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.model_label)) },
         text = {
-            Column {
-                if (models.isEmpty()) {
-                    Text(stringResource(R.string.models_not_loaded), style = MaterialTheme.typography.bodySmall)
-                } else {
-                    LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
-                        items(models, key = { it.id }) { model ->
-                            RadioRow(
-                                title = model.id,
-                                subtitle = model.description?.take(90),
-                                selected = model.id == selected,
-                                onSelect = { onSelect(model.id) },
-                            )
-                        }
+            if (models.isEmpty()) {
+                Text(stringResource(R.string.models_not_loaded), style = MaterialTheme.typography.bodySmall)
+            } else {
+                LazyColumn(modifier = Modifier.heightIn(max = 380.dp)) {
+                    items(models, key = { it.id }) { model ->
+                        RadioRow(
+                            title = model.id,
+                            subtitle = model.description?.take(90),
+                            selected = model.id == selected,
+                            onSelect = { onSelect(model.id) },
+                        )
                     }
                 }
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = custom,
-                    onValueChange = { custom = it.trim() },
-                    label = { Text(stringResource(R.string.model_other)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
             }
         },
-        confirmButton = {
-            TextButton(onClick = { onSelect(custom) }, enabled = custom.isNotBlank()) {
-                Text(stringResource(R.string.use_this))
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) } },
     )
 }
 

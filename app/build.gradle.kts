@@ -100,6 +100,8 @@ android {
         unitTests {
             // Lets tested code call android.util.Log & co. without blowing up.
             isReturnDefaultValues = true
+            // Robolectric needs the app's resources and manifest to run the screens on the JVM.
+            isIncludeAndroidResources = true
         }
     }
 }
@@ -122,8 +124,17 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    // Adds the empty activity that Compose UI tests host their content in.
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
+
+    // The screens, run on the JVM.
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.test.ext.junit)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
 }

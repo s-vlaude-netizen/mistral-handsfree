@@ -83,6 +83,14 @@ class LiveSessionController(
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
 
+    private val _liveMode = MutableStateFlow(false)
+
+    /**
+     * true while the hands-free loop runs - as opposed to a single typed question
+     * being answered, which also moves [state] but is not live mode.
+     */
+    val liveMode: StateFlow<Boolean> = _liveMode.asStateFlow()
+
     private val _statusDetail = MutableStateFlow("")
     val statusDetail: StateFlow<String> = _statusDetail.asStateFlow()
 
@@ -135,6 +143,10 @@ class LiveSessionController(
         _error.value = null
         _needsSignIn.value = false
         if (settingsStore.current.freshStart) clearConversation()
+        // First the flag, so that a typed answer that is cut off below does not report "idle" afterwards.
+        _liveMode.value = true
+        // A typed answer that is still being read out must not be listened to.
+        interruptCurrentTurn()
         // Set right here and not only once the loop runs: the foreground service watches
         // this state and would stop itself again if it saw "idle" in the gap.
         _state.value = LiveState.PREPARING
@@ -143,6 +155,7 @@ class LiveSessionController(
 
     /** Ends hands-free mode; the conversation stays on screen. */
     fun stop() {
+        _liveMode.value = false
         loopJob?.cancel()
         loopJob = null
         turnJob?.cancel()
@@ -178,12 +191,18 @@ class LiveSessionController(
             pendingTypedInput.set(clean)
             stt?.abort()
         } else {
-            scope.launch {
-                _error.value = null
-                prepareForTurn()
-                runTurn(clean, speakAloud = true)
-                _state.value = LiveState.IDLE
+            val job = scope.launch {
+                try {
+                    _error.value = null
+                    prepareForTurn()
+                    runTurn(clean, speakAloud = true)
+                } finally {
+                    // Back to idle - unless live mode has taken over in the meantime.
+                    if (!_liveMode.value) _state.value = LiveState.IDLE
+                }
             }
+            turnJob = job
+            job.invokeOnCompletion { if (turnJob === job) turnJob = null }
         }
     }
 
@@ -292,6 +311,7 @@ class LiveSessionController(
             _partial.value = ""
             _level.value = 0f
             _state.value = LiveState.IDLE
+            _liveMode.value = false
             loopJob = null
         }
     }

@@ -7,7 +7,6 @@
     <string name="cancel">Cancel</string>
     <string name="back">Back</string>
     <string name="refresh">Refresh</string>
-    <string name="use_this">Use</string>
 
     <!-- Notification -->
     <string name="notification_channel_name">Live mode</string>
@@ -92,7 +91,8 @@
 
     <string name="section_model">Model</string>
     <string name="model_label">Chat model</string>
-    <string name="model_other">Other model id</string>
+    <string name="model_hint">Type any model id - a fine-tuned one, say - or tap the arrow to choose from your account\'s list.</string>
+    <string name="choose_model">Choose from the list</string>
     <string name="models_not_loaded">The model list has not been loaded. Check your connection and refresh, or type a model id below.</string>
     <string name="temperature">Temperature</string>
     <string name="max_answer_length">Maximum answer length</string>

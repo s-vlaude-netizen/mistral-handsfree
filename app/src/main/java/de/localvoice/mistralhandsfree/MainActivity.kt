@@ -22,7 +22,6 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import de.localvoice.mistralhandsfree.service.LiveSessionService
-import de.localvoice.mistralhandsfree.session.LiveState
 import de.localvoice.mistralhandsfree.ui.LiveScreen
 import de.localvoice.mistralhandsfree.ui.MainViewModel
 import de.localvoice.mistralhandsfree.ui.SettingsScreen
@@ -45,7 +44,7 @@ class MainActivity : ComponentActivity() {
 private fun AppRoot() {
     val context = LocalContext.current
     val viewModel: MainViewModel = viewModel(factory = MainViewModel.Factory)
-    val state by viewModel.session.state.collectAsStateWithLifecycle()
+    val liveMode by viewModel.session.liveMode.collectAsStateWithLifecycle()
     val signedIn by viewModel.signedIn.collectAsStateWithLifecycle()
 
     var showSettings by rememberSaveable { mutableStateOf(false) }
@@ -92,7 +91,7 @@ private fun AppRoot() {
             onOpenSettings = { showSettings = true },
             onSignIn = { replacingKey = true },
             onToggleLive = {
-                if (state != LiveState.IDLE) {
+                if (liveMode) {
                     viewModel.session.stop()
                     LiveSessionService.stop(context)
                 } else if (hasMicPermission(context)) {

@@ -534,6 +534,103 @@ class LiveSessionControllerTest {
         assertTrue(rig.llm.histories.isEmpty())
     }
 
+    // ------------------------------------------------------------- live mode flag
+
+    @Test
+    fun `live mode is on exactly while the loop runs`() = runTest {
+        val rig = rig()
+        assertFalse(rig.controller.liveMode.value)
+
+        rig.controller.start()
+        assertTrue(rig.controller.liveMode.value)
+        advanceUntilIdle()
+        assertTrue(rig.controller.liveMode.value)
+
+        rig.controller.stop()
+        assertFalse(rig.controller.liveMode.value)
+    }
+
+    @Test
+    fun `live mode ends by itself when the loop does`() = runTest {
+        val rig = rig()
+        startLive(rig, SttResult.Text("stop"))
+        assertEquals(LiveState.IDLE, rig.controller.state.value)
+        assertFalse(rig.controller.liveMode.value)
+    }
+
+    @Test
+    fun `a typed question is not live mode`() = runTest {
+        val rig = rig()
+        val gate = CompletableDeferred<Unit>()
+        rig.llm.reply { flow { emit(longSentence); gate.await(); emit("Done.") } }
+
+        rig.controller.sendTypedMessage("typed")
+        advanceUntilIdle()
+
+        // The answer is being read out, which moves the state - but the loop is not running.
+        assertEquals(LiveState.SPEAKING, rig.controller.state.value)
+        assertFalse(rig.controller.liveMode.value)
+        assertFalse(rig.controller.isRunning)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(LiveState.IDLE, rig.controller.state.value)
+    }
+
+    @Test
+    fun `a typed answer can be interrupted, and the state returns to idle`() = runTest {
+        val rig = rig()
+        var cancelled = false
+        rig.llm.reply {
+            flow {
+                try {
+                    emit(longSentence)
+                    awaitCancellation()
+                } finally {
+                    cancelled = true
+                }
+            }
+        }
+        rig.controller.sendTypedMessage("typed")
+        advanceUntilIdle()
+        assertEquals(LiveState.SPEAKING, rig.controller.state.value)
+
+        rig.controller.interruptCurrentTurn()
+        advanceUntilIdle()
+
+        assertTrue("the request to the model is cancelled too", cancelled)
+        assertEquals(LiveState.IDLE, rig.controller.state.value)
+        assertEquals(longSentence.trim(), rig.texts()[1])
+        assertFalse(rig.controller.messages.value[1].streaming)
+    }
+
+    @Test
+    fun `starting live mode cuts off a typed answer that is still being read out`() = runTest {
+        val rig = rig()
+        var cancelled = false
+        rig.llm.reply {
+            flow {
+                try {
+                    emit(longSentence)
+                    awaitCancellation()
+                } finally {
+                    cancelled = true
+                }
+            }
+        }
+        rig.controller.sendTypedMessage("typed")
+        advanceUntilIdle()
+        val stopsBefore = rig.speaker.stops
+
+        rig.controller.start()
+        advanceUntilIdle()
+
+        assertTrue(cancelled)
+        assertTrue("the voice was silenced before the microphone opened", rig.speaker.stops > stopsBefore)
+        assertEquals(LiveState.LISTENING, rig.controller.state.value)
+        assertTrue(rig.controller.liveMode.value)
+    }
+
     // ---------------------------------------------------------------- start-up
 
     @Test
