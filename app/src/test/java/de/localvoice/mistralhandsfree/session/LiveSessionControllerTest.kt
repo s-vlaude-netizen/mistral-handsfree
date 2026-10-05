@@ -5,6 +5,7 @@ import de.localvoice.mistralhandsfree.auth.ApiKeyStore
 import de.localvoice.mistralhandsfree.data.AppSettings
 import de.localvoice.mistralhandsfree.data.SettingsSource
 import de.localvoice.mistralhandsfree.domain.ChatMessage
+import de.localvoice.mistralhandsfree.domain.Languages
 import de.localvoice.mistralhandsfree.domain.Role
 import de.localvoice.mistralhandsfree.llm.LlmEngine
 import de.localvoice.mistralhandsfree.mistral.MistralException
@@ -166,15 +167,26 @@ class LiveSessionControllerTest {
         /** Every recognizer the controller asked for; the first one is the usual one. */
         val recognizers = mutableListOf<FakeStt>()
         var recognizerSetup: (FakeStt) -> Unit = {}
+
+        /** The language setting that each recognizer and each speaker was made for. */
+        val recognizerLanguages = mutableListOf<String>()
+        val speakerLanguages = mutableListOf<String>()
         var speakerNotice: String? = null
 
         val stt: FakeStt get() = recognizers.first()
 
         private val engines = object : SpeechEngines {
             override fun recognizer(settings: AppSettings): SpeechToText =
-                FakeStt().also { recognizerSetup(it); recognizers += it }
+                FakeStt().also {
+                    recognizerSetup(it)
+                    recognizers += it
+                    recognizerLanguages += settings.language
+                }
 
-            override suspend fun speaker(settings: AppSettings) = SpeakerSetup(speaker, speakerNotice)
+            override suspend fun speaker(settings: AppSettings): SpeakerSetup {
+                speakerLanguages += settings.language
+                return SpeakerSetup(speaker, speakerNotice)
+            }
         }
 
         val controller = LiveSessionController(
@@ -185,6 +197,7 @@ class LiveSessionControllerTest {
             engines = engines,
             hasMicrophonePermission = { microphone },
             scope = scope,
+            deviceLanguage = { "de-DE" },
         )
     }
 
@@ -815,6 +828,46 @@ class LiveSessionControllerTest {
     }
 
     @Test
+    fun `the same note about the voice is not repeated at every start`() = runTest {
+        val rig = rig()
+        rig.speakerNotice = "using the phone's voice"
+        startLive(rig)
+        assertEquals("using the phone's voice", rig.controller.error.value)
+
+        // Dismissed, live mode stopped and started again: somebody who has accepted the
+        // phone's voice for their language does not need to hear it every time.
+        rig.controller.dismissError()
+        rig.controller.stop()
+        advanceUntilIdle()
+        rig.settings.update { it.copy(speechRate = 1.25f) } // a new speaker is made
+        startLive(rig)
+
+        assertEquals(2, rig.speakerLanguages.size)
+        assertNull(rig.controller.error.value)
+    }
+
+    @Test
+    fun `a note that went away and came back is said again`() = runTest {
+        val rig = rig()
+        rig.speakerNotice = "using the phone's voice"
+        startLive(rig)
+        rig.controller.dismissError()
+        rig.controller.stop()
+        advanceUntilIdle()
+
+        rig.speakerNotice = null // the user chose a Mistral voice that works
+        rig.settings.update { it.copy(speechRate = 1.1f) }
+        startLive(rig)
+        rig.controller.stop()
+        advanceUntilIdle()
+        rig.speakerNotice = "using the phone's voice" // ... and later went back
+        rig.settings.update { it.copy(speechRate = 1.2f) }
+        startLive(rig)
+
+        assertEquals("using the phone's voice", rig.controller.error.value)
+    }
+
+    @Test
     fun `a speaker that cannot start is reported`() = runTest {
         val rig = rig()
         rig.speaker.prepareResult = false
@@ -823,11 +876,41 @@ class LiveSessionControllerTest {
     }
 
     @Test
-    fun `the voice test speaks a fixed sentence`() = runTest {
+    fun `the voice test speaks a sentence in the language of the conversation`() = runTest {
         val rig = rig()
+        rig.settings.update { it.copy(language = "en-US") }
         rig.controller.testSpeech()
         advanceUntilIdle()
-        assertEquals(listOf(TEXT.get(R.string.test_speech_sentence)), rig.speaker.spoken)
+        // Not in the language of the screen: an English voice reading German proves nothing.
+        assertEquals(listOf(Languages.sampleSentence("en-US")), rig.speaker.spoken)
+    }
+
+    @Test
+    fun `the voice test follows the phone's language unless told otherwise`() = runTest {
+        for (language in listOf(Languages.PHONE, Languages.AUTOMATIC)) {
+            val rig = rig()
+            rig.settings.update { it.copy(language = language) }
+            rig.controller.testSpeech()
+            advanceUntilIdle()
+            assertEquals(language, listOf(Languages.sampleSentence("de-DE")), rig.speaker.spoken)
+        }
+    }
+
+    @Test
+    fun `a changed language gets a new recognizer and a new voice at the next round`() = runTest {
+        val rig = rig()
+        startLive(rig, SttResult.Silence)
+        assertEquals(listOf(Languages.PHONE), rig.recognizerLanguages)
+        assertEquals(listOf(Languages.PHONE), rig.speakerLanguages)
+
+        rig.recognizerSetup = {}
+        rig.settings.update { it.copy(language = "fr-FR") }
+        rig.stt.abort()
+        advanceUntilIdle()
+
+        // Both are made for one language, so a new language needs new ones.
+        assertEquals(listOf(Languages.PHONE, "fr-FR"), rig.recognizerLanguages)
+        assertEquals(listOf(Languages.PHONE, "fr-FR"), rig.speakerLanguages)
     }
 
     @Test

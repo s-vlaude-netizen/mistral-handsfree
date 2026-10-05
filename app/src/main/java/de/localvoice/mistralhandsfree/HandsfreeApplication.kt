@@ -67,7 +67,7 @@ class AppContainer(
         text = text,
         settingsStore = settings,
         keyStore = keyStore,
-        llm = MistralLlmEngine(mistral.client) { settings.current },
+        llm = MistralLlmEngine(mistral.client, settings = { settings.current }),
         engines = engines ?: AndroidSpeechEngines(application, mistral, applicationScope, text),
         hasMicrophonePermission = {
             ContextCompat.checkSelfPermission(application, Manifest.permission.RECORD_AUDIO) ==

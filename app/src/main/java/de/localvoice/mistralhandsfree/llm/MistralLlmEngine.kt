@@ -3,6 +3,8 @@ package de.localvoice.mistralhandsfree.llm
 import de.localvoice.mistralhandsfree.data.AppSettings
 import de.localvoice.mistralhandsfree.domain.ChatMessage
 import de.localvoice.mistralhandsfree.domain.ConversationWindow
+import de.localvoice.mistralhandsfree.domain.Languages
+import de.localvoice.mistralhandsfree.domain.SystemPrompt
 import de.localvoice.mistralhandsfree.mistral.ChatParams
 import de.localvoice.mistralhandsfree.mistral.MistralClient
 import kotlinx.coroutines.flow.Flow
@@ -17,13 +19,16 @@ import kotlinx.coroutines.flow.Flow
 class MistralLlmEngine(
     private val client: MistralClient,
     private val settings: () -> AppSettings,
+    private val deviceTag: () -> String = Languages::deviceTag,
 ) : LlmEngine {
 
     override val displayName: String get() = settings().model
 
     override fun generate(history: List<ChatMessage>): Flow<String> {
         val current = settings()
-        val messages = ConversationWindow.build(current.systemPrompt, history)
+        // The language setting reaches the model only through this instruction.
+        val instruction = SystemPrompt.build(current.systemPrompt, current.language, deviceTag())
+        val messages = ConversationWindow.build(instruction, history)
         return client.streamChat(
             messages = messages,
             params = ChatParams(

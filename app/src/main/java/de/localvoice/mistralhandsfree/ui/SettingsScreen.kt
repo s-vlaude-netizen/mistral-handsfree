@@ -37,6 +37,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,8 +49,13 @@ import de.localvoice.mistralhandsfree.R
 import de.localvoice.mistralhandsfree.data.AppSettings
 import de.localvoice.mistralhandsfree.data.SttEngine
 import de.localvoice.mistralhandsfree.data.TtsEngine
+import de.localvoice.mistralhandsfree.domain.Languages
+import de.localvoice.mistralhandsfree.domain.SystemPrompt
 import de.localvoice.mistralhandsfree.mistral.ChatModel
 import de.localvoice.mistralhandsfree.mistral.Voice
+import de.localvoice.mistralhandsfree.mistral.VoiceChoice
+import de.localvoice.mistralhandsfree.mistral.chooseVoice
+import de.localvoice.mistralhandsfree.mistral.speaks
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -69,6 +75,13 @@ fun SettingsScreen(
 
     var showModelPicker by remember { mutableStateOf(false) }
     var showVoicePicker by remember { mutableStateOf(false) }
+    var showLanguagePicker by remember { mutableStateOf(false) }
+    // A tag typed by hand: shown as a text field below the picker, for as long as the screen is open.
+    var customLanguage by rememberSaveable { mutableStateOf(isCustomLanguage(settings.language)) }
+    // What is in the instruction field. Kept here and not read back from the settings, because
+    // an empty field must be allowed while the user rewrites the text (empty means "built-in").
+    var instruction by rememberSaveable { mutableStateOf(settings.systemPrompt.ifBlank { SystemPrompt.DEFAULT }) }
+    val phoneLanguage = Languages.displayName(Languages.deviceTag())
 
     LaunchedEffect(Unit) {
         if (catalog == null) viewModel.refreshModels()
@@ -160,6 +173,27 @@ fun SettingsScreen(
             }
 
             Section(title = stringResource(R.string.section_conversation)) {
+                PickerRow(
+                    label = stringResource(R.string.language_label),
+                    value = languageSummary(context, settings.language, phoneLanguage),
+                    onClick = { showLanguagePicker = true },
+                    trailing = {},
+                )
+                if (customLanguage) {
+                    OutlinedTextField(
+                        value = settings.language,
+                        onValueChange = { value -> viewModel.updateSettings { it.copy(language = value.trim()) } },
+                        label = { Text(stringResource(R.string.language_other_label)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                    )
+                }
+                Text(
+                    stringResource(R.string.language_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
                 SwitchRow(
                     title = stringResource(R.string.hands_free_title),
                     subtitle = stringResource(R.string.hands_free_subtitle),
@@ -174,9 +208,14 @@ fun SettingsScreen(
                 )
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
-                    value = settings.systemPrompt,
-                    onValueChange = { value -> viewModel.updateSettings { it.copy(systemPrompt = value) } },
+                    value = instruction,
+                    onValueChange = { value ->
+                        instruction = value
+                        // The built-in text is not stored, so that it can be improved later.
+                        viewModel.updateSettings { it.copy(systemPrompt = if (SystemPrompt.isBuiltIn(value)) "" else value) }
+                    },
                     label = { Text(stringResource(R.string.section_system_prompt)) },
+                    supportingText = { Text(stringResource(R.string.system_prompt_hint)) },
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 3,
                     maxLines = 8,
@@ -196,6 +235,17 @@ fun SettingsScreen(
                     selected = settings.sttEngine == SttEngine.MISTRAL,
                     onSelect = { viewModel.updateSettings { it.copy(sttEngine = SttEngine.MISTRAL) } },
                 )
+                // Voxtral transcribes 13 languages; for others it can only try to detect the language.
+                if (settings.sttEngine == SttEngine.MISTRAL &&
+                    !Languages.voxtralListens(settings.language, Languages.deviceTag())
+                ) {
+                    val tag = Languages.effectiveTag(settings.language, Languages.deviceTag())
+                    Text(
+                        stringResource(R.string.stt_voxtral_language_note, Languages.displayName(tag)),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Spacer(Modifier.height(8.dp))
                 SliderRow(
                     label = stringResource(R.string.pause_label),
@@ -215,13 +265,6 @@ fun SettingsScreen(
                 )
                 if (settings.sttEngine == SttEngine.SYSTEM) {
                     Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = settings.sttLanguageTag,
-                        onValueChange = { value -> viewModel.updateSettings { it.copy(sttLanguageTag = value.trim()) } },
-                        label = { Text(stringResource(R.string.stt_language_label)) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                    )
                     SwitchRow(
                         title = stringResource(R.string.on_device_title),
                         subtitle = stringResource(R.string.on_device_subtitle),
@@ -257,13 +300,27 @@ fun SettingsScreen(
                         },
                     )
                 }
-                OutlinedTextField(
-                    value = settings.ttsLanguageTag,
-                    onValueChange = { value -> viewModel.updateSettings { it.copy(ttsLanguageTag = value.trim()) } },
-                    label = { Text(stringResource(R.string.tts_language_label)) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
+                if (settings.ttsEngine == TtsEngine.MISTRAL && !voices.isNullOrEmpty()) {
+                    val tag = Languages.effectiveTag(settings.language, Languages.deviceTag())
+                    val picked = voices.orEmpty().firstOrNull { it.id == settings.mistralVoiceId }
+                    val note = when {
+                        // "Automatic" and nobody speaks the language: the phone's voice takes over.
+                        settings.mistralVoiceId.isBlank() &&
+                            chooseVoice("", voices.orEmpty(), tag) == VoiceChoice.NoneForLanguage ->
+                            stringResource(R.string.voice_none_for_language, Languages.displayName(tag))
+                        // A voice picked by hand is used whatever it speaks - say what that sounds like.
+                        picked != null && !picked.speaks(tag) ->
+                            stringResource(R.string.voice_accent_note, picked.name, Languages.displayName(tag))
+                        else -> null
+                    }
+                    if (note != null) {
+                        Text(
+                            note,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
                 if (settings.ttsEngine == TtsEngine.SYSTEM) {
                     SliderRow(
                         label = stringResource(R.string.speech_rate),
@@ -298,6 +355,22 @@ fun SettingsScreen(
                 showModelPicker = false
             },
             onDismiss = { showModelPicker = false },
+        )
+    }
+    if (showLanguagePicker) {
+        LanguagePickerDialog(
+            selected = settings.language,
+            phoneLanguage = phoneLanguage,
+            onSelect = { language ->
+                viewModel.updateSettings { it.copy(language = language) }
+                customLanguage = false
+                showLanguagePicker = false
+            },
+            onOther = {
+                customLanguage = true
+                showLanguagePicker = false
+            },
+            onDismiss = { showLanguagePicker = false },
         )
     }
     if (showVoicePicker) {
@@ -335,6 +408,16 @@ private fun PickerRow(
     }
 }
 
+/** A tag the user typed, as opposed to one of the entries of the picker. */
+private fun isCustomLanguage(language: String): Boolean =
+    Languages.isExplicit(language) && Languages.choiceFor(language) == null
+
+private fun languageSummary(context: Context, language: String, phoneLanguage: String): String = when {
+    language == Languages.AUTOMATIC -> context.getString(R.string.language_automatic)
+    Languages.isExplicit(language) -> Languages.pickerName(language)
+    else -> context.getString(R.string.language_phone, phoneLanguage)
+}
+
 private fun voiceSummary(context: Context, selectedId: String, voices: List<Voice>?): String {
     if (selectedId.isBlank()) return context.getString(R.string.voice_automatic)
     return voices?.firstOrNull { it.id == selectedId }?.name ?: selectedId.take(8)
@@ -363,6 +446,54 @@ private fun ModelPickerDialog(
                             onSelect = { onSelect(model.id) },
                         )
                     }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) } },
+    )
+}
+
+@Composable
+private fun LanguagePickerDialog(
+    selected: String,
+    phoneLanguage: String,
+    onSelect: (String) -> Unit,
+    onOther: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.language_label)) },
+        text = {
+            LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
+                item {
+                    RadioRow(
+                        title = stringResource(R.string.language_phone, phoneLanguage),
+                        selected = !Languages.isExplicit(selected) && selected != Languages.AUTOMATIC,
+                        onSelect = { onSelect(Languages.PHONE) },
+                    )
+                }
+                item {
+                    RadioRow(
+                        title = stringResource(R.string.language_automatic),
+                        subtitle = stringResource(R.string.language_automatic_note),
+                        selected = selected == Languages.AUTOMATIC,
+                        onSelect = { onSelect(Languages.AUTOMATIC) },
+                    )
+                }
+                items(Languages.choices, key = { it.tag }) { choice ->
+                    RadioRow(
+                        title = choice.name,
+                        selected = choice.tag.equals(selected, ignoreCase = true),
+                        onSelect = { onSelect(choice.tag) },
+                    )
+                }
+                item {
+                    RadioRow(
+                        title = stringResource(R.string.language_other),
+                        selected = isCustomLanguage(selected),
+                        onSelect = onOther,
+                    )
                 }
             }
         },

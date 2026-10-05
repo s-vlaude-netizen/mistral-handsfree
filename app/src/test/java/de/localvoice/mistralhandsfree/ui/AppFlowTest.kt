@@ -7,14 +7,19 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.provider.Settings
 import androidx.annotation.StringRes
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.core.view.drawToBitmap
@@ -28,6 +33,8 @@ import de.localvoice.mistralhandsfree.R
 import de.localvoice.mistralhandsfree.service.LiveSessionService
 import de.localvoice.mistralhandsfree.data.SttEngine
 import de.localvoice.mistralhandsfree.data.TtsEngine
+import de.localvoice.mistralhandsfree.domain.Languages
+import de.localvoice.mistralhandsfree.domain.SystemPrompt
 import de.localvoice.mistralhandsfree.testing.InMemoryKeyStore
 import de.localvoice.mistralhandsfree.testing.MistralStub
 import de.localvoice.mistralhandsfree.testing.SilentEngines
@@ -414,6 +421,159 @@ class AppFlowTest {
         compose.waitUntil(10_000) { stub.requests.any { it.path?.startsWith("/v1/audio/voices") == true } }
         compose.onNodeWithText(string(R.string.tts_not_started)).performScrollTo()
         screenshot("11-settings-voice")
+    }
+
+    // ------------------------------------------------------------------ language
+
+    private fun openSettings() {
+        install(signedInWith = goodKey)
+        launch()
+        waitForText(string(R.string.start_live))
+        compose.onNodeWithContentDescription(string(R.string.open_settings)).performClick()
+        waitForText(string(R.string.section_account))
+    }
+
+    @Test
+    fun `the language is chosen in one place and applies to everything`() {
+        openSettings()
+        // Out of the box it follows the phone, and nothing is stored on the way in: the
+        // instruction to the model used to be saved the moment the settings were opened.
+        compose.onNodeWithText(string(R.string.language_phone, "English")).performScrollTo().assertExists()
+        assertEquals(Languages.PHONE, app.container.settings.current.language)
+        assertEquals("", app.container.settings.current.systemPrompt)
+
+        compose.onNodeWithText(string(R.string.language_label)).performScrollTo().performClick()
+        waitForText(string(R.string.language_automatic))
+        // (The screenshots show the screen, not dialogs: the dialog has a window of its own.)
+        screenshot("14-settings-conversation")
+        compose.onNodeWithText("Deutsch").performClick()
+
+        compose.waitUntil(10_000) { app.container.settings.current.language == "de-DE" }
+        waitForText("Deutsch")
+        screenshot("15-settings-language-chosen")
+        // One setting, not one for listening and one for the voice.
+        assertEquals(1, compose.onAllNodesWithText(string(R.string.language_label)).fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun `automatic can be chosen and the other languages are reachable`() {
+        openSettings()
+        compose.onNodeWithText(string(R.string.language_label)).performScrollTo().performClick()
+        waitForText(string(R.string.language_automatic))
+
+        compose.onNodeWithText(string(R.string.language_automatic)).performClick()
+
+        compose.waitUntil(10_000) { app.container.settings.current.language == Languages.AUTOMATIC }
+        waitForText(string(R.string.language_automatic))
+    }
+
+    @Test
+    fun `a language that is not in the list can be typed`() {
+        openSettings()
+        compose.onNodeWithText(string(R.string.language_label)).performScrollTo().performClick()
+        waitForText(string(R.string.language_automatic))
+        // "Other…" is last in a long list.
+        // Found by its size, not its content: what is in view changes while it scrolls.
+        val rows = Languages.choices.size + 3 // plus "like the phone", "automatic" and "other"
+        val pickerList = SemanticsMatcher("the language list") {
+            it.config.getOrNull(SemanticsProperties.CollectionInfo)?.rowCount == rows
+        }
+        compose.onNode(pickerList).performScrollToNode(hasText(string(R.string.language_other)))
+        compose.onNodeWithText(string(R.string.language_other)).performClick()
+        waitForText(string(R.string.language_other_label))
+
+        compose.onNode(hasText(string(R.string.language_other_label))).performTextInput("fi-FI")
+
+        compose.waitUntil(10_000) { app.container.settings.current.language == "fi-FI" }
+        // The picker shows it under its own name.
+        waitForText("Suomi")
+    }
+
+    @Test
+    @Config(qualifiers = "+de")
+    fun `in German the phone's language is named in German`() {
+        openSettings()
+
+        compose.onNodeWithText("Wie das Telefon (Deutsch)").performScrollTo().assertExists()
+        screenshot("16-settings-language-de")
+    }
+
+    @Test
+    fun `the voice test speaks in the chosen language, not in the language of the screen`() {
+        openSettings()
+        app.container.settings.update { it.copy(language = "en-US") }
+
+        compose.onNodeWithText(string(R.string.test_speech_button)).performScrollTo().performClick()
+
+        compose.waitUntil(10_000) { engines.spoken.isNotEmpty() }
+        assertEquals(listOf(Languages.sampleSentence("en-US")), engines.spoken.toList())
+    }
+
+    @Test
+    fun `it says when voxtral does not list the language`() {
+        openSettings()
+        compose.onNodeWithText(string(R.string.stt_engine_mistral)).performScrollTo().performClick()
+        compose.waitUntil(10_000) { app.container.settings.current.sttEngine == SttEngine.MISTRAL }
+        val note = string(R.string.stt_voxtral_language_note, "Polish")
+
+        app.container.settings.update { it.copy(language = "pl-PL") }
+        waitForText(note)
+
+        app.container.settings.update { it.copy(language = "de-DE") }
+        waitForNoText(note)
+        app.container.settings.update { it.copy(language = "pl-PL") }
+        waitForText(note)
+        app.container.settings.update { it.copy(language = Languages.AUTOMATIC) }
+        waitForNoText(note)
+    }
+
+    @Test
+    fun `it says when no Mistral voice speaks the language`() {
+        openSettings()
+        compose.onNodeWithText(string(R.string.tts_engine_mistral)).performScrollTo().performClick()
+        compose.waitUntil(10_000) { stub.requests.any { it.path?.startsWith("/v1/audio/voices") == true } }
+
+        // The stub's voices speak English, French and German - like the account's, not like Mistral's built-in ones.
+        app.container.settings.update { it.copy(language = "es-ES") }
+        val hint = string(R.string.voice_none_for_language, "Spanish")
+        waitForText(hint)
+        compose.onNodeWithText(hint).performScrollTo()
+        screenshot("17-settings-voice-none-for-language")
+
+        app.container.settings.update { it.copy(language = "fr-FR") }
+        waitForNoText(hint)
+    }
+
+    @Test
+    fun `a voice picked by hand that does not speak the language is said to have an accent`() {
+        openSettings()
+        compose.onNodeWithText(string(R.string.tts_engine_mistral)).performScrollTo().performClick()
+        compose.waitUntil(10_000) { stub.requests.any { it.path?.startsWith("/v1/audio/voices") == true } }
+        val marie = "11111111-1111-1111-1111-111111111111" // speaks French and English, see MistralStub
+        val jonas = "22222222-2222-2222-2222-222222222222" // speaks German and English
+
+        app.container.settings.update { it.copy(language = "de-DE", mistralVoiceId = marie) }
+        val note = string(R.string.voice_accent_note, "Marie", "German")
+        waitForText(note)
+        compose.onNodeWithText(note).performScrollTo()
+        screenshot("18-settings-voice-accent")
+
+        app.container.settings.update { it.copy(mistralVoiceId = jonas) }
+        waitForNoText(note)
+    }
+
+    @Test
+    fun `the instruction field shows the built-in text and saves only what the user changes`() {
+        openSettings()
+        compose.onNodeWithText(SystemPrompt.DEFAULT).performScrollTo().assertExists()
+        assertEquals("looking is not editing", "", app.container.settings.current.systemPrompt)
+
+        compose.onNodeWithText(SystemPrompt.DEFAULT).performTextInput(" Be funny.")
+
+        // Wherever the cursor was, the built-in text plus the edit is the user's own instruction now.
+        compose.waitUntil(10_000) { app.container.settings.current.systemPrompt.contains("Be funny.") }
+        val stored = app.container.settings.current.systemPrompt
+        assertTrue(stored, stored.contains(SystemPrompt.DEFAULT.take(40)))
     }
 
     @Test

@@ -105,17 +105,25 @@
     <string name="hands_free_subtitle">Listen again automatically after every answer</string>
     <string name="fresh_start_title">Fresh start</string>
     <string name="fresh_start_subtitle">Clear the conversation whenever live mode starts</string>
+    <string name="language_label">Language</string>
+    <string name="language_note">Used for listening, for the language of the answers and for the voice.</string>
+    <string name="language_phone">Same as the phone (%1$s)</string>
+    <string name="language_automatic">Automatic</string>
+    <string name="language_automatic_note">Follows what you say. Works best with Mistral Voxtral for listening; the phone\'s recognizer and the voice use the phone\'s language.</string>
+    <string name="language_other">Other…</string>
+    <string name="language_other_label">Language tag (e.g. fi-FI)</string>
     <string name="section_system_prompt">System instruction</string>
+    <string name="system_prompt_hint">The language chosen above is added to this instruction automatically, so the text can stay in English.</string>
 
     <string name="section_listening">Listening</string>
     <string name="stt_engine_system">The phone\'s speech recognition</string>
     <string name="stt_engine_system_note">Free and quick to start. The phone\'s recognizer decides when you are done, and may send the audio to Google.</string>
     <string name="stt_engine_mistral">Mistral Voxtral</string>
-    <string name="stt_engine_mistral_note">The audio goes to Mistral (billed per minute, which is very little). The app waits for exactly the pause you set. No start-up beep, and the language is detected automatically.</string>
+    <string name="stt_engine_mistral_note">The audio goes to Mistral (billed per minute, which is very little). The app waits for exactly the pause you set. No start-up beep. It listens for the language chosen under Conversation - or detects it, if you chose Automatic.</string>
+    <string name="stt_voxtral_language_note">Voxtral does not list %1$s among the languages it transcribes. It will try to detect the language by itself and may get it wrong.</string>
     <string name="pause_label">Pause that ends your turn</string>
     <string name="pause_note_mistral">After this much quiet, your message is sent. Raise it if you get cut off while you are thinking.</string>
     <string name="pause_note_system">Only a hint for the phone\'s recognizer, and many ignore it. Choose Mistral Voxtral for an exact pause.</string>
-    <string name="stt_language_label">Language (e.g. en-US)</string>
     <string name="on_device_title">Prefer on-device recognition</string>
     <string name="on_device_subtitle">Keeps the audio on the phone; needs the offline language pack</string>
 
@@ -126,12 +134,12 @@
     <string name="tts_engine_mistral_note">Natural, expressive voices, billed per character. Falls back to the phone\'s voice whenever Mistral cannot speak.</string>
     <string name="voice_label">Voice</string>
     <string name="voice_automatic">Automatic</string>
-    <string name="voice_automatic_note">Picks a voice that speaks the language</string>
+    <string name="voice_automatic_note">Picks a voice that speaks the language; the phone\'s voice if none does</string>
+    <string name="voice_none_for_language">No Mistral voice speaks %1$s. With Automatic, the phone\'s voice reads the answers; or pick a voice to hear %1$s with its accent.</string>
+    <string name="voice_accent_note">%1$s does not list %2$s, so it will speak it with its own accent.</string>
     <string name="voices_none">No voices were found for this account.</string>
-    <string name="tts_language_label">Language (e.g. en-US)</string>
     <string name="speech_rate">Speaking rate</string>
     <string name="test_speech_button">Test voice</string>
-    <string name="test_speech_sentence">Speech output works. If you can hear this, everything is fine.</string>
 
     <string name="section_about">About</string>
     <string name="about_text">Handsfree for Mistral is an unofficial, open-source client. It is not affiliated with or endorsed by Mistral AI. Your conversation is sent to Mistral\'s API. Audio leaves the phone only if you choose a speech option above that says so.</string>
@@ -162,7 +170,7 @@
     <string name="tts_rejected">Speech output refused the sentence (code %1$d).</string>
     <string name="tts_mistral_failed">Mistral\'s voice failed (%1$s). Using the phone\'s voice instead.</string>
     <string name="tts_no_mistral_voice">No Mistral voice is available for this account. Using the phone\'s voice.</string>
+    <string name="tts_no_mistral_voice_for">No Mistral voice speaks %1$s, so the phone\'s voice reads the answers. To hear a Mistral voice anyway (it will have an accent), pick one under Settings → Voice.</string>
 
     <!-- The instruction every conversation starts with -->
-    <string name="default_system_prompt">You are a voice assistant in a hands-free conversation. The user speaks to you and hears your answer read aloud. Answer in the language the user speaks. Keep it short and natural: two or three sentences are usually enough, unless the user asks for more. No markdown, no lists, no headings, no emojis and no web addresses - everything is spoken. Write numbers and symbols the way they are pronounced when that avoids confusion.</string>
 </resources>

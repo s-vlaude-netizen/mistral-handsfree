@@ -77,7 +77,7 @@ decide that you have finished talking; pick one under *Settings → Listening*.
 | Speech → text | The phone's recognizer (usually Google's) | Mistral's `voxtral-mini-latest` |
 | Cost | Free | Billed by Mistral per minute of audio |
 | Start-up beep between turns | Some devices | No |
-| Language | Fixed in the settings | Detected automatically |
+| Language | The language you chose | The language you chose, or detected if you chose *Automatic* |
 | Live partial text | Yes | No |
 
 The **Voxtral** engine reads the microphone itself and watches the level. Speech
@@ -91,17 +91,51 @@ detector, not a neural VAD — a deliberate choice, so there is no model file to
 ship and its behaviour can be tested. The recording is trimmed to the speech
 (plus a short lead-in) before upload.
 
+## Language
+
+*Settings → Conversation → Language* is one setting that decides three things, because
+they only work together:
+
+| What | What the setting does |
+|---|---|
+| **Listening** | The phone's recognizer listens for that language. Voxtral is told the language. Without that it has to guess it from the audio, which is unreliable for short or accented speech. |
+| **The answers** | The model is told which language to answer in (*"The user speaks English. Always reply in English, …"*). The instruction the model starts with is English for every phone, because instructions in German pull the answers towards German whatever you speak. |
+| **The voice** | A voice that speaks the language is picked, and the *Test voice* button speaks a sentence in it. |
+
+Voxtral transcribes 13 languages (English, Chinese, Hindi, Spanish, Arabic, French,
+Portuguese, Russian, German, Japanese, Korean, Italian, Dutch); for any other the app
+does not force a language on it and the settings say so.
+
+The default is *Same as the phone*. *Automatic* follows what you say — Voxtral detects
+the language and the model answers in kind — but a voice needs one language, so it
+uses the phone's. Any other language can be entered as a tag (*Other…*).
+
+Your own *System instruction* is kept as you wrote it; the language line is added to it.
+
 ## Voices
 
 *Settings → Voice*:
 
-- **The phone's voice** (default) — free, instant, works offline.
+- **The phone's voice** (default) — free, instant, works offline, and speaks every
+  language the phone has voice data for.
 - **Mistral Voxtral voice** — natural and expressive, billed per character. Voices
   are fetched from your account; *Automatic* picks one that speaks your language.
   Sentences are synthesised ahead of the playback and streamed into one continuous
   audio track, so there is no gap between them. If Mistral cannot speak a sentence
   (rate limit, moderation block, no connection) that sentence is read by the
   phone's voice instead of leaving silence.
+
+Voxtral can speak nine languages (English, French, German, Spanish, Portuguese,
+Italian, Dutch, Hindi, Arabic), **but Mistral's built-in voices are only American
+and British English and French.** A voice speaks other languages with its own accent.
+So when no voice of your account lists your language, *Automatic* hands over to the
+phone's voice — which pronounces German natively — and says so once; the settings
+explain it, too. You can still pick any Mistral voice by hand and hear the accent.
+
+A voice that speaks a language natively is one you add yourself: Voxtral clones a voice
+from a few seconds of speech, which you upload through Mistral's API
+(`POST /v1/audio/voices`) or its AI Studio. The app lists every voice of the account, so
+a voice you add shows up after *Refresh*. (Making one inside this app is not built.)
 
 ## Models
 
@@ -231,8 +265,9 @@ SHA-256  5C:3F:25:0B:96:A7:06:6D:7F:11:32:B1:0F:0D:6A:32:
 - **Work offline.** The local chat this grew out of ran its model on the phone; this
   one needs a connection for every answer. The phone's recognition and voice can stay
   on the device, but the text of each turn always goes to Mistral.
-- **Follow the language of the conversation with the phone's voice.** It reads in the
-  one language chosen in the settings.
+- **Switch language by itself while speaking.** The voice follows the language setting,
+  not each answer. *Automatic* lets the listening and the model follow you, and the voice
+  stays in the phone's language.
 - **Bluetooth headset routing** is left to Android's defaults.
 - **Anything with images, files or tools.** It is a voice chat.
 

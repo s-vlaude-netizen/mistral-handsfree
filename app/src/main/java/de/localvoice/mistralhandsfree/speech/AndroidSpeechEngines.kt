@@ -5,11 +5,12 @@ import de.localvoice.mistralhandsfree.R
 import de.localvoice.mistralhandsfree.data.AppSettings
 import de.localvoice.mistralhandsfree.data.SttEngine
 import de.localvoice.mistralhandsfree.data.TtsEngine
+import de.localvoice.mistralhandsfree.domain.Languages
 import de.localvoice.mistralhandsfree.mistral.MistralAudio
 import de.localvoice.mistralhandsfree.mistral.MistralRepository
-import de.localvoice.mistralhandsfree.mistral.pickVoice
+import de.localvoice.mistralhandsfree.mistral.VoiceChoice
+import de.localvoice.mistralhandsfree.mistral.chooseVoice
 import de.localvoice.mistralhandsfree.session.TextSource
-import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 
 /** The real engines: the system's and Mistral's. */
@@ -20,42 +21,63 @@ class AndroidSpeechEngines(
     private val text: TextSource,
 ) : SpeechEngines {
 
-    override fun recognizer(settings: AppSettings): SpeechToText = when (settings.sttEngine) {
-        SttEngine.SYSTEM -> AndroidSpeechToText(
-            context = context,
-            languageTag = settings.sttLanguageTag,
-            preferOnDevice = settings.preferOnDevice,
-            pauseMs = settings.pauseMs,
-        )
+    override fun recognizer(settings: AppSettings): SpeechToText {
+        val phone = Languages.deviceTag()
+        return when (settings.sttEngine) {
+            SttEngine.SYSTEM -> AndroidSpeechToText(
+                context = context,
+                languageTag = Languages.effectiveTag(settings.language, phone),
+                preferOnDevice = settings.preferOnDevice,
+                pauseMs = settings.pauseMs,
+            )
 
-        SttEngine.MISTRAL -> MistralSpeechToText(
-            text = text,
-            mic = AudioRecordMic,
-            // No language is passed on purpose: Voxtral detects it, which suits people who switch.
-            transcribe = { wav ->
-                mistral.audio.transcribe(
-                    wav = wav,
-                    modelId = mistral.catalog.value?.transcriptionModelId ?: MistralAudio.DEFAULT_STT_MODEL,
+            SttEngine.MISTRAL -> {
+                // A language Voxtral lists is passed on: left to guess, it can pick the wrong
+                // one for short or accented speech. "Automatic" lets it detect the language.
+                val language = Languages.transcriptionCode(settings.language, phone)
+                MistralSpeechToText(
+                    text = text,
+                    mic = AudioRecordMic,
+                    transcribe = { wav ->
+                        mistral.audio.transcribe(
+                            wav = wav,
+                            language = language,
+                            modelId = mistral.catalog.value?.transcriptionModelId ?: MistralAudio.DEFAULT_STT_MODEL,
+                        )
+                    },
+                    pauseMs = settings.pauseMs,
                 )
-            },
-            pauseMs = settings.pauseMs,
-        )
+            }
+        }
     }
 
     override suspend fun speaker(settings: AppSettings): SpeakerSetup {
+        val tag = Languages.effectiveTag(settings.language, Languages.deviceTag())
         val device = AndroidSpeaker(
             context = context,
-            locale = Locale.forLanguageTag(settings.ttsLanguageTag),
+            locale = Languages.locale(tag),
             speechRate = settings.speechRate,
             pitch = settings.pitch,
         )
         if (settings.ttsEngine == TtsEngine.SYSTEM) return SpeakerSetup(device)
 
-        val voice = settings.mistralVoiceId.ifBlank {
-            pickVoice(mistral.voicesOrLoad(), settings.ttsLanguageTag)?.id.orEmpty()
+        // The voice list is only needed when the user has not picked a voice themselves.
+        val choice = if (settings.mistralVoiceId.isNotBlank()) {
+            VoiceChoice.Chosen(settings.mistralVoiceId)
+        } else {
+            chooseVoice("", mistral.voicesOrLoad(), tag)
         }
-        // No voice to speak with: say so, and carry on with the phone's own.
-        if (voice.isEmpty()) return SpeakerSetup(device, text.get(R.string.tts_no_mistral_voice))
+        val voice = when (choice) {
+            is VoiceChoice.Chosen -> choice.id
+            is VoiceChoice.Matching -> choice.voice.id
+            // Mistral's own voices are American and British English and French. Reading German
+            // with one of them is accented German, so the phone's voice, which speaks it
+            // natively, reads instead - and the user is told why and what else they can do.
+            VoiceChoice.NoneForLanguage ->
+                return SpeakerSetup(device, text.get(R.string.tts_no_mistral_voice_for, Languages.displayName(tag)))
+
+            VoiceChoice.NoVoices -> return SpeakerSetup(device, text.get(R.string.tts_no_mistral_voice))
+        }
 
         // Looked up per sentence rather than once: the model list may arrive after this speaker was made.
         fun modelId() = mistral.catalog.value?.speechModelId ?: MistralAudio.DEFAULT_TTS_MODEL

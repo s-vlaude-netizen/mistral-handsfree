@@ -72,7 +72,13 @@ class LiveSessionService : Service() {
                         stopForegroundCompat()
                         stopSelf()
                     } else {
-                        notify(label(state), controller().statusDetail.value)
+                        // The watcher is also what ends the service when the session is over, so a
+                        // notification that cannot be updated must not stop it.
+                        try {
+                            notify(label(state), controller().statusDetail.value)
+                        } catch (e: RuntimeException) {
+                            Log.w(TAG, "Could not update the notification", e)
+                        }
                     }
                 }
             }

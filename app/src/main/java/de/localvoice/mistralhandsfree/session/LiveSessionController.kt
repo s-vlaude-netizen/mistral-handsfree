@@ -7,6 +7,7 @@ import de.localvoice.mistralhandsfree.data.AppSettings
 import de.localvoice.mistralhandsfree.data.SettingsSource
 import de.localvoice.mistralhandsfree.data.TtsEngine
 import de.localvoice.mistralhandsfree.domain.ChatMessage
+import de.localvoice.mistralhandsfree.domain.Languages
 import de.localvoice.mistralhandsfree.domain.Role
 import de.localvoice.mistralhandsfree.domain.SentenceChunker
 import de.localvoice.mistralhandsfree.domain.SpeechText
@@ -75,6 +76,7 @@ class LiveSessionController(
     private val engines: SpeechEngines,
     private val hasMicrophonePermission: () -> Boolean,
     private val scope: CoroutineScope,
+    private val deviceLanguage: () -> String = Languages::deviceTag,
 ) {
 
     private val _state = MutableStateFlow(LiveState.IDLE)
@@ -128,6 +130,7 @@ class LiveSessionController(
     private val speakerMutex = Mutex()
 
     private var loopJob: Job? = null
+    private var lastSpeakerNotice: String? = null
     private var turnJob: Job? = null
     private var sttRelayJob: Job? = null
     private var speakerRelayJob: Job? = null
@@ -245,12 +248,16 @@ class LiveSessionController(
         stt = null
     }
 
-    /** Speaks a fixed sentence - to check the voice. */
+    /** Speaks a sentence in the language of the conversation - to check the voice. */
     fun testSpeech() {
         scope.launch {
             _error.value = null
-            ensureSpeaker(settingsStore.current)
-            speaker?.speakNow(text.get(R.string.test_speech_sentence))
+            val settings = settingsStore.current
+            ensureSpeaker(settings)
+            // Not a sentence in the language of the screen: an English voice reading German
+            // says nothing about whether the voice for the conversation works.
+            val tag = Languages.effectiveTag(settings.language, deviceLanguage())
+            speaker?.speakNow(Languages.sampleSentence(tag))
         }
     }
 
@@ -422,7 +429,7 @@ class LiveSessionController(
 
     private fun ensureStt(settings: AppSettings) {
         val signature = listOf(
-            settings.sttEngine, settings.sttLanguageTag, settings.preferOnDevice, settings.pauseMs,
+            settings.sttEngine, settings.language, settings.preferOnDevice, settings.pauseMs,
         ).joinToString("|")
         if (stt != null && sttSignature == signature) return
         stt?.destroy()
@@ -447,14 +454,17 @@ class LiveSessionController(
 
     private suspend fun ensureSpeaker(settings: AppSettings) = speakerMutex.withLock {
         val signature = listOf(
-            settings.ttsEngine, settings.ttsLanguageTag, settings.speechRate, settings.pitch,
+            settings.ttsEngine, settings.language, settings.speechRate, settings.pitch,
             settings.mistralVoiceId,
         ).joinToString("|")
         if (speaker != null && speakerSignature == signature) return@withLock
         speaker?.shutdown()
 
         val setup = engines.speaker(settings)
-        setup.notice?.let { _error.value = it }
+        // Said once. Someone who has decided to live with the phone's voice for their language
+        // should not be told again at every start; a different notice, or none in between, is new.
+        setup.notice?.let { if (it != lastSpeakerNotice) _error.value = it }
+        lastSpeakerNotice = setup.notice
         val created = setup.speaker
         val ok = created.prepare()
         speaker = created

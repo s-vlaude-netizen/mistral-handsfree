@@ -5,6 +5,7 @@ import android.app.Notification
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import de.localvoice.mistralhandsfree.AppContainer
@@ -78,7 +79,16 @@ class LiveSessionServiceTest {
     private fun awaitUntil(timeoutMs: Long = 10_000, what: String, condition: () -> Boolean) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (!condition()) {
-            if (System.currentTimeMillis() > deadline) throw AssertionError("Timed out waiting for $what")
+            if (System.currentTimeMillis() > deadline) {
+                // Say where it stands, so that a failure on another machine can be understood from its log.
+                throw AssertionError(
+                    "Timed out waiting for $what. Session: ${session.state.value} (live mode ${session.liveMode.value}), " +
+                        "error: ${session.error.value}, notification: ${notificationTitle()}, " +
+                        "service stopped by itself: ${shadowOf(service).isStoppedBySelf}",
+                )
+            }
+            // The test thread is Robolectric's main thread; let whatever was posted to it run.
+            shadowOf(Looper.getMainLooper()).idle()
             Thread.sleep(10)
         }
     }
