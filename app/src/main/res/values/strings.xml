@@ -152,7 +152,7 @@
     <string name="tts_no_engine_short">No text-to-speech engine found</string>
     <string name="tts_engine_default_voice">engine default</string>
     <string name="tts_diagnostics">Engine: %1$s | Voice: %2$s | Language: %3$s</string>
-    <string name="tts_diagnostics_mistral">Mistral %1$s | Voice: %2$s…</string>
+    <string name="tts_diagnostics_mistral">Mistral voice: %1$s</string>
     <string name="tts_language_missing">The speech data for %1$s is missing. Install it in the system settings under text-to-speech.</string>
     <string name="tts_no_voice">No voice is installed for %1$s. Without one the phone stays silent.</string>
     <string name="tts_not_ready">Speech output was not ready, the sentence was lost.</string>

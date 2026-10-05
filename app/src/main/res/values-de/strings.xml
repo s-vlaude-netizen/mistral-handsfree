@@ -152,7 +152,7 @@
     <string name="tts_no_engine_short">Keine Text-zu-Sprache-Engine gefunden</string>
     <string name="tts_engine_default_voice">Standard der Engine</string>
     <string name="tts_diagnostics">Engine: %1$s | Stimme: %2$s | Sprache: %3$s</string>
-    <string name="tts_diagnostics_mistral">Mistral %1$s | Stimme: %2$s …</string>
+    <string name="tts_diagnostics_mistral">Mistral-Stimme: %1$s</string>
     <string name="tts_language_missing">Die Sprachdaten für %1$s fehlen. Installiere sie in den Systemeinstellungen unter Text-in-Sprache-Ausgabe.</string>
     <string name="tts_no_voice">Für %1$s ist keine Stimme installiert. Ohne eine bleibt das Telefon stumm.</string>
     <string name="tts_not_ready">Die Sprachausgabe war nicht bereit, der Satz ging verloren.</string>

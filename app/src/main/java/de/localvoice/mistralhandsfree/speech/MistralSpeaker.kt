@@ -1,16 +1,15 @@
 package de.localvoice.mistralhandsfree.speech
 
-import android.content.Context
-import android.media.AudioFormat
-import android.media.AudioTrack
 import android.util.Log
 import de.localvoice.mistralhandsfree.R
 import de.localvoice.mistralhandsfree.mistral.MistralAudio
 import de.localvoice.mistralhandsfree.mistral.MistralException
 import de.localvoice.mistralhandsfree.mistral.userMessage
+import de.localvoice.mistralhandsfree.session.TextSource
 import java.io.IOException
 import kotlin.math.max
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -18,6 +17,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,21 +34,26 @@ import kotlinx.coroutines.withTimeout
  *
  * Every sentence is one request, and the requests run ahead of the playback:
  * while sentence one is being spoken, sentence two is already being synthesized.
- * The audio of all sentences goes into one continuous [AudioTrack], so there is
- * no gap where one ends and the next begins.
+ * The audio of all sentences goes into one continuous output, so there is no gap
+ * where one ends and the next begins.
  *
  * If Mistral cannot speak a sentence - rate limit, a moderation block, a timeout,
  * no connection - that sentence is spoken by [fallback] instead (normally the
  * phone's own voice), so a problem costs a change of voice rather than silence.
  * Order is kept: the fallback only speaks once everything before it has played.
+ *
+ * @param synthesize turns one sentence into 24 kHz mono float audio ([MistralAudio.SPEECH_SAMPLE_RATE]).
+ * @param describe what to show in the diagnostics line: model and voice.
  */
 class MistralSpeaker(
-    private val context: Context,
-    private val audio: MistralAudio,
-    private val modelId: () -> String,
-    private val voiceId: () -> String,
+    private val text: TextSource,
+    private val synthesize: (sentence: String) -> Flow<FloatArray>,
+    private val describe: () -> String,
     private val fallback: Speaker,
     private val scope: CoroutineScope,
+    private val outputFactory: PcmOutputFactory,
+    private val focus: FocusControl,
+    private val io: CoroutineDispatcher = Dispatchers.IO,
 ) : Speaker {
 
     /** One sentence on its way: the text, and the audio as it arrives. */
@@ -81,15 +86,13 @@ class MistralSpeaker(
     private val _warning = MutableStateFlow<String?>(null)
     override val warning: StateFlow<String?> = _warning.asStateFlow()
 
-    private val _diagnostics = MutableStateFlow(context.getString(R.string.tts_not_started))
+    private val _diagnostics = MutableStateFlow(text.get(R.string.tts_not_started))
     override val diagnostics: StateFlow<String> = _diagnostics.asStateFlow()
 
-    private val focus = AudioFocus(context, AudioFocus.SPEECH_ATTRIBUTES)
-
     @Volatile
-    private var track: AudioTrack? = null
+    private var output: PcmOutput? = null
 
-    /** Frames written to the current [track]; compared with its playback position. */
+    /** Frames written to the current [output]; compared with how many it has played. */
     @Volatile
     private var framesWritten = 0L
 
@@ -102,7 +105,7 @@ class MistralSpeaker(
         relayJob = scope.launch {
             fallback.warning.collect { message -> if (message != null) _warning.value = message }
         }
-        _diagnostics.value = context.getString(R.string.tts_diagnostics_mistral, modelId(), voiceId().take(8))
+        _diagnostics.value = text.get(R.string.tts_diagnostics_mistral, describe())
         return true // Mistral's voice is assumed to work until a request says otherwise
     }
 
@@ -114,10 +117,10 @@ class MistralSpeaker(
             queue.addLast(item)
             pending.update { it + 1 }
             _busy.value = true
-            item.synthesis = scope.launch(Dispatchers.IO) { synthesize(item) }
+            item.synthesis = scope.launch(io) { synthesizeInto(item) }
             // Started under the lock, and the consumer takes the lock first thing:
             // it cannot finish and clear this field before it has been assigned.
-            if (consumer == null) consumer = scope.launch(Dispatchers.IO) { consume() }
+            if (consumer == null) consumer = scope.launch(io) { consume() }
         }
         focus.acquire()
     }
@@ -128,11 +131,11 @@ class MistralSpeaker(
     }
 
     /** Fetches the audio of one sentence into [Item.audio]. */
-    private suspend fun synthesize(item: Item) {
+    private suspend fun synthesizeInto(item: Item) {
         try {
             slots.withPermit {
                 withTimeout(SYNTHESIS_TIMEOUT_MS) {
-                    audio.streamSpeech(item.text, voiceId(), modelId()).collect { item.audio.send(it) }
+                    synthesize(item.text).collect { item.audio.send(it) }
                 }
             }
         } catch (e: TimeoutCancellationException) {
@@ -167,13 +170,13 @@ class MistralSpeaker(
         var gotAudio = false
         try {
             for (chunk in item.audio) {
-                writeFully(ensureTrack(), chunk)
+                writeFully(ensureOutput(), chunk)
                 gotAudio = true
             }
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
-            // e.g. the AudioTrack could not be created, or was released under our feet
+            // e.g. the audio output could not be opened, or was released under our feet
             item.failure = item.failure ?: t
         } finally {
             current = null
@@ -186,7 +189,7 @@ class MistralSpeaker(
         // the sentence over in another voice would be worse than a short sentence.
         if (gotAudio) return
 
-        awaitTrackDrained() // everything before this sentence plays out first
+        awaitDrained() // everything before this sentence plays out first
         fallback.enqueue(item.text)
         fallback.awaitIdle()
     }
@@ -195,86 +198,53 @@ class MistralSpeaker(
         Log.w(TAG, "Mistral voice failed: ${failure.message}")
         if (warnedAboutFallback) return
         warnedAboutFallback = true
-        val reason = (failure as? MistralException)?.userMessage(context) ?: (failure.message ?: "")
-        _warning.value = context.getString(R.string.tts_mistral_failed, reason)
+        val reason = (failure as? MistralException)?.userMessage(text) ?: (failure.message ?: "")
+        _warning.value = text.get(R.string.tts_mistral_failed, reason)
     }
 
-    private fun ensureTrack(): AudioTrack {
-        track?.let { existing ->
-            if (existing.playState != AudioTrack.PLAYSTATE_PLAYING) existing.play()
-            return existing
-        }
-        val rate = MistralAudio.SPEECH_SAMPLE_RATE
-        val minBuffer = AudioTrack.getMinBufferSize(
-            rate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT,
-        )
-        // Half a second of float samples: enough to ride out a late network chunk.
-        val bufferBytes = max(minBuffer, rate * BYTES_PER_SAMPLE / 2)
-        val created = AudioTrack.Builder()
-            .setAudioAttributes(AudioFocus.SPEECH_ATTRIBUTES)
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                    .setSampleRate(rate)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build(),
-            )
-            .setBufferSizeInBytes(bufferBytes)
-            .setTransferMode(AudioTrack.MODE_STREAM)
-            .build()
+    private fun ensureOutput(): PcmOutput {
+        output?.let { return it }
         framesWritten = 0
-        track = created
-        created.play()
-        return created
+        return outputFactory.open(MistralAudio.SPEECH_SAMPLE_RATE).also { output = it }
     }
 
-    private fun writeFully(target: AudioTrack, samples: FloatArray) {
-        var offset = 0
-        while (offset < samples.size) {
-            val written = target.write(samples, offset, samples.size - offset, AudioTrack.WRITE_BLOCKING)
-            if (written < 0) throw IOException("AudioTrack.write failed: $written")
-            offset += written
-        }
+    private fun writeFully(target: PcmOutput, samples: FloatArray) {
+        target.write(samples)
         framesWritten += samples.size // mono: one sample is one frame
     }
 
-    /** Waits until everything written to the track has actually come out of the speaker. */
-    private suspend fun awaitTrackDrained() {
-        val t = track ?: return
+    /** Waits until everything written has actually come out of the speaker. */
+    private suspend fun awaitDrained() {
+        val out = output ?: return
         val target = framesWritten
         val rate = MistralAudio.SPEECH_SAMPLE_RATE
         try {
-            val remaining = max(0L, target - playbackHead(t))
+            val remaining = max(0L, target - out.playedFrames)
             // The deadline keeps a stalled audio driver from hanging the conversation.
             var budgetMs = remaining * 1000 / rate + DRAIN_SLACK_MS
-            while (currentCoroutineContext().isActive && playbackHead(t) < target && budgetMs > 0) {
+            while (currentCoroutineContext().isActive && out.playedFrames < target && budgetMs > 0) {
                 delay(POLL_MS)
                 budgetMs -= POLL_MS
             }
         } catch (_: IllegalStateException) {
-            // The track was released while we were waiting - that means stop() ran.
+            // The output was released while we were waiting - that means stop() ran.
         }
     }
 
-    private fun playbackHead(t: AudioTrack): Long = t.playbackHeadPosition.toLong() and 0xFFFFFFFFL
-
-    private fun releaseTrack() {
-        val t = track
-        track = null
+    private fun releaseOutput() {
+        val out = output
+        output = null
         framesWritten = 0
-        if (t != null) {
-            runCatching { t.pause(); t.flush() }
-            runCatching { t.release() }
-        }
+        out?.release()
     }
 
     override suspend fun awaitIdle() {
         pending.first { it == 0 }
-        awaitTrackDrained()
+        awaitDrained()
         fallback.awaitIdle()
         val finished = synchronized(lock) { queue.isEmpty() && pending.value == 0 }
         if (finished) {
-            releaseTrack()
+            releaseOutput()
             _busy.value = false
             focus.release()
         }
@@ -292,7 +262,7 @@ class MistralSpeaker(
         }
         dropped.forEach { it.synthesis?.cancel() }
         current?.synthesis?.cancel()
-        releaseTrack() // also frees a write() that is blocked on a full buffer
+        releaseOutput() // also frees a write() that is blocked on a full buffer
         fallback.stop()
         focus.release()
     }
@@ -304,8 +274,8 @@ class MistralSpeaker(
         fallback.shutdown()
     }
 
-    private companion object {
-        const val TAG = "MistralSpeaker"
+    companion object {
+        private const val TAG = "MistralSpeaker"
 
         /** Sentences synthesized at the same time; more would only trip rate limits. */
         const val MAX_PARALLEL_SYNTHESIS = 2
@@ -313,8 +283,7 @@ class MistralSpeaker(
         /** One sentence is a few seconds of audio; if it takes this long something is wrong. */
         const val SYNTHESIS_TIMEOUT_MS = 20_000L
 
-        const val BYTES_PER_SAMPLE = 4
-        const val DRAIN_SLACK_MS = 1_000L
-        const val POLL_MS = 20L
+        private const val DRAIN_SLACK_MS = 1_000L
+        private const val POLL_MS = 20L
     }
 }

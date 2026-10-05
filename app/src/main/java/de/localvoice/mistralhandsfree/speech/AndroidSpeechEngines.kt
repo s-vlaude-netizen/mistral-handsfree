@@ -29,10 +29,14 @@ class AndroidSpeechEngines(
         )
 
         SttEngine.MISTRAL -> MistralSpeechToText(
-            context = context,
-            audio = mistral.audio,
-            transcriptionModel = {
-                mistral.catalog.value?.transcriptionModelId ?: MistralAudio.DEFAULT_STT_MODEL
+            text = text,
+            mic = AudioRecordMic,
+            // No language is passed on purpose: Voxtral detects it, which suits people who switch.
+            transcribe = { wav ->
+                mistral.audio.transcribe(
+                    wav = wav,
+                    modelId = mistral.catalog.value?.transcriptionModelId ?: MistralAudio.DEFAULT_STT_MODEL,
+                )
             },
             pauseMs = settings.pauseMs,
         )
@@ -53,14 +57,18 @@ class AndroidSpeechEngines(
         // No voice to speak with: say so, and carry on with the phone's own.
         if (voice.isEmpty()) return SpeakerSetup(device, text.get(R.string.tts_no_mistral_voice))
 
+        // Looked up per sentence rather than once: the model list may arrive after this speaker was made.
+        fun modelId() = mistral.catalog.value?.speechModelId ?: MistralAudio.DEFAULT_TTS_MODEL
+
         return SpeakerSetup(
             MistralSpeaker(
-                context = context,
-                audio = mistral.audio,
-                modelId = { mistral.catalog.value?.speechModelId ?: MistralAudio.DEFAULT_TTS_MODEL },
-                voiceId = { voice },
+                text = text,
+                synthesize = { sentence -> mistral.audio.streamSpeech(sentence, voice, modelId()) },
+                describe = { "${modelId()} · ${voice.take(8)}" },
                 fallback = device,
                 scope = scope,
+                outputFactory = PcmOutputFactory { rate -> AudioTrackOutput(rate) },
+                focus = AudioFocus(context, AudioFocus.SPEECH_ATTRIBUTES),
             ),
         )
     }

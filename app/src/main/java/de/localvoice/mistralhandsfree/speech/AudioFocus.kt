@@ -5,6 +5,12 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 
+/** What the speakers need from audio focus. */
+interface FocusControl {
+    fun acquire()
+    fun release()
+}
+
 /**
  * Audio focus for speech output.
  *
@@ -12,13 +18,13 @@ import android.media.AudioManager
  * playing - for example right after speech recognition. Other apps' media
  * (music, a podcast) is lowered while the assistant speaks and comes back after.
  */
-class AudioFocus(context: Context, private val attributes: AudioAttributes) {
+class AudioFocus(context: Context, private val attributes: AudioAttributes) : FocusControl {
 
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private var request: AudioFocusRequest? = null
 
     @Synchronized
-    fun acquire() {
+    override fun acquire() {
         if (request != null) return
         val created = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
             .setAudioAttributes(attributes)
@@ -28,7 +34,7 @@ class AudioFocus(context: Context, private val attributes: AudioAttributes) {
     }
 
     @Synchronized
-    fun release() {
+    override fun release() {
         val held = request ?: return
         request = null
         runCatching { audioManager?.abandonAudioFocusRequest(held) }

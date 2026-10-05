@@ -1,17 +1,14 @@
 package de.localvoice.mistralhandsfree.speech
 
-import android.content.Context
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
 import android.util.Log
 import de.localvoice.mistralhandsfree.R
-import de.localvoice.mistralhandsfree.mistral.MistralAudio
 import de.localvoice.mistralhandsfree.mistral.MistralException
 import de.localvoice.mistralhandsfree.mistral.userMessage
+import de.localvoice.mistralhandsfree.session.TextSource
 import kotlin.math.max
 import kotlin.math.min
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,14 +32,14 @@ import kotlinx.coroutines.withContext
  * return there is no start-up beep between turns, no dependence on Google's
  * recognizer, and the language is detected automatically.
  *
- * @param languageHint ISO 639-1 code, or null to let Voxtral detect the language.
+ * @param transcribe sends a WAV file to Mistral and returns the text.
  */
 class MistralSpeechToText(
-    private val context: Context,
-    private val audio: MistralAudio,
-    private val transcriptionModel: () -> String,
+    private val text: TextSource,
+    private val mic: MicSourceFactory,
+    private val transcribe: suspend (wav: ByteArray) -> String,
     private val pauseMs: Int,
-    private val languageHint: String? = null,
+    private val io: CoroutineDispatcher = Dispatchers.IO,
 ) : SpeechToText {
 
     private val _partialText = MutableStateFlow("")
@@ -58,7 +55,7 @@ class MistralSpeechToText(
     private var aborted = false
 
     @Volatile
-    private var recorder: AudioRecord? = null
+    private var source: MicSource? = null
 
     private sealed interface Capture {
         class Speech(val samples: ShortArray) : Capture
@@ -67,7 +64,7 @@ class MistralSpeechToText(
         class Error(val message: String, val recoverable: Boolean) : Capture
     }
 
-    override suspend fun listenOnce(): SttResult = withContext(Dispatchers.IO) {
+    override suspend fun listenOnce(): SttResult = withContext(io) {
         aborted = false
         _partialText.value = ""
         _level.value = 0f
@@ -79,7 +76,7 @@ class MistralSpeechToText(
             throw e
         } catch (t: Throwable) {
             Log.e(TAG, "Recording failed", t)
-            Capture.Error(context.getString(R.string.stt_mic_failed), recoverable = true)
+            Capture.Error(text.get(R.string.stt_mic_failed), recoverable = true)
         }
         _level.value = 0f
 
@@ -94,14 +91,14 @@ class MistralSpeechToText(
         _processing.value = true
         try {
             val wav = Wav.fromPcm16Mono(samples, SAMPLE_RATE)
-            val text = audio.transcribe(wav, languageHint, transcriptionModel()).trim()
+            val recognized = transcribe(wav).trim()
             // Very short or punctuation-only results are what a model makes of a click or breath.
-            return if (text.count { it.isLetterOrDigit() } < 2) SttResult.Silence else SttResult.Text(text)
+            return if (recognized.count { it.isLetterOrDigit() } < 2) SttResult.Silence else SttResult.Text(recognized)
         } catch (e: MistralException) {
             Log.w(TAG, "Transcription failed: ${e.message}")
             val rejectedKey = e.kind == MistralException.Kind.UNAUTHORIZED
             return SttResult.Failure(
-                e.userMessage(context),
+                e.userMessage(text),
                 // A rejected key will not fix itself; everything else may be gone next round.
                 recoverable = !rejectedKey,
                 needsSignIn = rejectedKey,
@@ -115,33 +112,17 @@ class MistralSpeechToText(
         val endpointer = Endpointer(sampleRate = SAMPLE_RATE, pauseMs = pauseMs)
         val frameSamples = endpointer.frameSamples
 
-        val minBuffer = AudioRecord.getMinBufferSize(
-            SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
-        )
-        if (minBuffer <= 0) {
-            return Capture.Error(context.getString(R.string.stt_mic_failed), recoverable = false)
+        val microphone = when (val opened = mic.open(SAMPLE_RATE)) {
+            is MicOpenResult.Ready -> opened.source
+            MicOpenResult.Denied -> return Capture.Error(text.get(R.string.stt_no_permission), recoverable = false)
+            MicOpenResult.Unsupported -> return Capture.Error(text.get(R.string.stt_mic_failed), recoverable = false)
         }
 
-        // At least a second of buffer, so that a hiccup in this thread loses no audio.
-        val bufferBytes = max(minBuffer, SAMPLE_RATE * 2)
-        val record = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_RECOGNITION,
-            SAMPLE_RATE,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-            bufferBytes,
-        )
-        if (record.state != AudioRecord.STATE_INITIALIZED) {
-            record.release()
-            return Capture.Error(context.getString(R.string.stt_no_permission), recoverable = false)
-        }
-
-        recorder = record
+        source = microphone
         try {
-            record.startRecording()
-            if (record.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+            if (!microphone.start()) {
                 // Another app holds the microphone exclusively.
-                return Capture.Error(context.getString(R.string.stt_mic_busy), recoverable = true)
+                return Capture.Error(text.get(R.string.stt_mic_busy), recoverable = true)
             }
 
             var pcm = ShortArray(frameSamples * INITIAL_FRAMES)
@@ -149,12 +130,12 @@ class MistralSpeechToText(
             val frame = ShortArray(frameSamples)
 
             while (currentCoroutineContext().isActive && !aborted) {
-                val read = record.read(frame, 0, frameSamples)
+                val read = microphone.read(frame, frameSamples)
                 if (read < 0) {
                     // abort() stops the recorder to release a read that is waiting for
                     // the next frame; that read then fails, which is not a fault.
                     if (aborted) return Capture.Aborted
-                    return Capture.Error(context.getString(R.string.stt_mic_failed), recoverable = true)
+                    return Capture.Error(text.get(R.string.stt_mic_failed), recoverable = true)
                 }
                 if (read == 0) continue
 
@@ -177,9 +158,9 @@ class MistralSpeechToText(
             }
             return Capture.Aborted
         } finally {
-            recorder = null
-            runCatching { record.stop() }
-            record.release()
+            source = null
+            microphone.stop()
+            microphone.release()
         }
     }
 
@@ -199,19 +180,19 @@ class MistralSpeechToText(
     override fun abort() {
         aborted = true
         // Unblocks a read that is waiting for the next frame.
-        runCatching { recorder?.stop() }
+        source?.stop()
     }
 
     override fun destroy() {
         abort()
     }
 
-    private companion object {
-        const val TAG = "MistralSpeechToText"
+    companion object {
+        private const val TAG = "MistralSpeechToText"
         const val SAMPLE_RATE = 16_000
 
         /** Room for ten seconds up front; grows by doubling after that. */
-        const val INITIAL_FRAMES = 500
+        private const val INITIAL_FRAMES = 500
 
         /** 300 ms before the first speech frame. */
         const val PREROLL_FRAMES = 15
