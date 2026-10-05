@@ -69,9 +69,10 @@ jobs:
       - name: Build APK
         run: ./gradlew --no-daemon assembleRelease
 
-      - name: Lint
-        run: ./gradlew --no-daemon lintDebug
-        continue-on-error: true
+      # There is no lint step on purpose. The lint that comes with AGP 8.7 crashes
+      # (IncompatibleClassChangeError) inside the checks that the current Compose and
+      # Lifecycle libraries ship, so it cannot report anything. Bring `lintDebug` back
+      # together with a newer AGP.
 
       - name: Name the APK and check the signature
         run: |
@@ -140,7 +141,6 @@ jobs:
           name: test-reports
           path: |
             app/build/reports/tests/**
-            app/build/reports/lint-results-*.html
             app/build/outputs/ui-screenshots/**
           if-no-files-found: ignore
           retention-days: 7

@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import de.localvoice.mistralhandsfree.HandsfreeApplication
 import de.localvoice.mistralhandsfree.MainActivity
@@ -53,7 +54,15 @@ class LiveSessionService : Service() {
             return START_NOT_STICKY
         }
 
-        startInForeground(getString(R.string.app_name), getString(R.string.state_preparing))
+        try {
+            startInForeground(getString(R.string.app_name), getString(R.string.state_preparing))
+        } catch (e: RuntimeException) {
+            // The system refused a microphone service (permission taken away, or no longer
+            // allowed to start one). Crashing helps nobody; the session goes on while the app is open.
+            Log.w(TAG, "Could not start in the foreground", e)
+            stopSelf()
+            return START_NOT_STICKY
+        }
         acquireWakeLock()
 
         if (watcher == null) {
@@ -68,7 +77,9 @@ class LiveSessionService : Service() {
                 }
             }
         }
-        return START_STICKY
+        // Not sticky: a restart after the process was killed would find an empty session
+        // (it lives in memory) and could not start a foreground service from the background.
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {
@@ -174,9 +185,10 @@ class LiveSessionService : Service() {
     }
 
     companion object {
+        private const val TAG = "LiveSessionService"
         private const val CHANNEL_ID = "live_session"
         private const val NOTIFICATION_ID = 42
-        private const val ACTION_STOP = "de.localvoice.mistralhandsfree.action.STOP"
+        internal const val ACTION_STOP = "de.localvoice.mistralhandsfree.action.STOP"
         private const val WAKE_LOCK_TIMEOUT_MS = 3L * 60 * 60 * 1000
 
         fun start(context: Context) {

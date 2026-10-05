@@ -30,12 +30,18 @@ The [`dev-latest`][release] release is replaced by every green build and always
 holds the current state. You need to allow "install from unknown sources" once.
 Updates install over the previous version and keep your settings and your key.
 
-> **Status: early version.** The logic — API client, streaming, error handling,
-> silence detection, text cleanup — is covered by unit tests that run against a
-> real local HTTP server and synthetic audio. The microphone and loudspeaker paths
-> cannot be unit-tested; they were written and compiled without a physical device
-> in the loop. If something does not work on your phone, that is the place to look
-> first — please open an issue with your Android version and device.
+> **Status: early version.** Over 200 automated tests cover the API client
+> (against a real local HTTP server), streaming, error handling, silence detection
+> (against synthetic audio), text cleanup and the whole listen → think → speak loop
+> (with scripted speech engines). The screens are driven end to end on a simulated
+> phone — sign-in, a wrong or revoked key, chatting, the settings, signing out; in
+> English, German and dark mode — against a stub Mistral server.
+>
+> What no test here could touch is the physical hardware: the real microphone and
+> loudspeaker, the Keystore, and the browser tab for the console. That code was
+> written and compiled without a device in the loop. If something does not work on
+> your phone, that is the place to look first — please open an issue with your
+> Android version and device.
 
 ## Signing in
 
@@ -98,10 +104,11 @@ ship and its behaviour can be tested. The recording is trimmed to the speech
 
 ## Models
 
-The list in *Settings → Model* is fetched live from `GET /v1/models`, so new models
-appear without an app update. The default is `mistral-small-latest` — a fast model
-suits a conversation best. Reasoning models are supported: their "thinking" is
-neither shown as the reply nor read aloud.
+*Settings → Model* is one field: type any model id (a fine-tuned one, say), or tap
+the arrow to pick from the chat models your account can use. That list is fetched
+live from `GET /v1/models`, so new models appear without an app update. The default
+is `mistral-small-latest` — a fast model suits a conversation best. Reasoning models
+are supported: their "thinking" is neither shown as the reply nor read aloud.
 
 Mistral's API keeps no conversation state, so every request carries the history.
 To keep a long hands-free session fast and affordable, the oldest turns are dropped
@@ -136,10 +143,15 @@ There is no analytics, no crash reporting, and no other server involved.
 
 ```bash
 ./gradlew assembleRelease      # APK in app/build/outputs/apk/release/
-./gradlew testDebugUnitTest    # the logic tests
+./gradlew testDebugUnitTest    # all tests: logic, the voice loop, the screens
 ```
 
 Requirements: JDK 17 and an Android SDK with API 36.
+
+The screen tests run on the JVM with Robolectric, so no emulator is needed; the first
+run downloads Robolectric's Android framework jar. They save a screenshot of every
+step to `app/build/outputs/ui-screenshots/`, and CI attaches those to each run (the
+`test-reports` artifact).
 
 ## How it is put together
 
@@ -158,6 +170,11 @@ app/src/main/java/de/localvoice/mistralhandsfree/
 ├─ llm/        The chat model behind a small interface
 └─ ui/         Compose: live screen, sign-in, settings
 ```
+
+How it is tested: `mistral/` runs against `MockWebServer`, so real HTTP and real
+server-sent events; the loop in `session/` runs against scripted speech engines on
+virtual time; and `ui/AppFlowTest` starts the real `MainActivity` on Robolectric,
+pointed at a stub Mistral server.
 
 The conversation state hangs off the `Application`, not the activity: rotating the
 screen or switching apps does not tear the conversation down. To keep the voice
@@ -210,6 +227,11 @@ SHA-256  5C:3F:25:0B:96:A7:06:6D:7F:11:32:B1:0F:0D:6A:32:
   barge-in needs recording and playing at the same time plus echo cancellation; the
   stop button is the stand-in.
 - **Wake word.** Live mode is started with the button.
+- **Work offline.** The local chat this grew out of ran its model on the phone; this
+  one needs a connection for every answer. The phone's recognition and voice can stay
+  on the device, but the text of each turn always goes to Mistral.
+- **Follow the language of the conversation with the phone's voice.** It reads in the
+  one language chosen in the settings.
 - **Bluetooth headset routing** is left to Android's defaults.
 - **Anything with images, files or tools.** It is a voice chat.
 
